@@ -1,0 +1,29 @@
+{
+  "global": {
+    "files": "/src/**/*.*"
+  },
+  "dependencies": [
+    {
+      "url": "https://github.com/abaplint/deps",
+      "folder": "/deps",
+      "files": "/src/**/*.*"
+    }
+  ],
+  "syntax": {
+    "version": "v750",
+    "errorNamespace": "^(Z|Y|LCL_|LTCL_)"
+  },
+  "rules": {
+    "parser_error": true,
+    "check_syntax": true,
+    "unknown_types": true,
+    "check_ddic": true,
+    "implement_methods": true,
+    "method_implemented_twice": true,
+    "superclass_final": true,
+    "unreachable_code": true,
+    "line_length": {
+      "length": 140
+    }
+  }
+}
