@@ -17,6 +17,17 @@ CLASS zcl_mdmdoc_rules DEFINITION
                 iv_lang            TYPE string DEFAULT 'EN'
       RETURNING VALUE(rt_findings) TYPE zif_mdmdoc_types=>tt_findings.
 
+    " The active rule set (for viewing/exporting): generated defaults for the
+    " doc class, or '' for both. Used by the ZMDMDOC_RULES viewer report.
+    CLASS-METHODS list_rules
+      IMPORTING iv_doc_class  TYPE string OPTIONAL
+      RETURNING VALUE(rt)     TYPE zif_mdmdoc_types=>tt_rules.
+
+    " Human-readable one-line description of a rule's WHEN condition.
+    CLASS-METHODS describe_when
+      IMPORTING is_rule       TYPE zif_mdmdoc_types=>ty_rule
+      RETURNING VALUE(rv_txt) TYPE string.
+
   PRIVATE SECTION.
     " Parsed / fallback rule sets and the IBAN-length table.
     DATA gt_rules_bank TYPE zif_mdmdoc_types=>tt_rules.
@@ -194,12 +205,22 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    gt_rules_bank = ls_root-rules_bank.
-    gt_rules_w9   = ls_root-rules_w9.
-    CLEAR gt_iban_len.
-    LOOP AT ls_root-iban_length ASSIGNING FIELD-SYMBOL(<il>).
-      INSERT <il> INTO TABLE gt_iban_len.
-    ENDLOOP.
+    " Per-class ("skill") partial override: start from the generated defaults,
+    " then replace ONLY the sections the override file actually carries. So a
+    " file with just rules_w9 swaps the W-9 skill and leaves banking untouched.
+    load_from_data( ).
+    IF ls_root-rules_bank IS NOT INITIAL.
+      gt_rules_bank = ls_root-rules_bank.
+    ENDIF.
+    IF ls_root-rules_w9 IS NOT INITIAL.
+      gt_rules_w9 = ls_root-rules_w9.
+    ENDIF.
+    IF ls_root-iban_length IS NOT INITIAL.
+      CLEAR gt_iban_len.
+      LOOP AT ls_root-iban_length ASSIGNING FIELD-SYMBOL(<il>).
+        INSERT <il> INTO TABLE gt_iban_len.
+      ENDLOOP.
+    ENDIF.
     rv_ok = abap_true.
   ENDMETHOD.
 
@@ -790,6 +811,45 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
     ELSE.
       ev_fired = abap_false.
     ENDIF.
+  ENDMETHOD.
+
+  METHOD list_rules.
+    IF iv_doc_class = zif_mdmdoc_types=>c_doc_class-bank.
+      rt = zcl_mdmdoc_rules_data=>gt_rules_bank.
+    ELSEIF iv_doc_class = zif_mdmdoc_types=>c_doc_class-w9.
+      rt = zcl_mdmdoc_rules_data=>gt_rules_w9.
+    ELSE.
+      rt = zcl_mdmdoc_rules_data=>gt_rules_bank.
+      APPEND LINES OF zcl_mdmdoc_rules_data=>gt_rules_w9 TO rt.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD describe_when.
+    CASE is_rule-when_op.
+      WHEN 'always'.
+        rv_txt = 'always'.
+      WHEN 'field_missing'.
+        rv_txt = |{ is_rule-when_field } is empty|.
+      WHEN 'flag_true'.
+        rv_txt = |{ is_rule-when_field } = true|.
+      WHEN 'flag_false'.
+        rv_txt = |{ is_rule-when_field } = false|.
+      WHEN 'equals'.
+        rv_txt = |{ is_rule-when_field } = "{ is_rule-when_value }"|.
+      WHEN 'in'.
+        rv_txt = |{ is_rule-when_field } in ({ concat_lines_of( table = is_rule-when_values sep = |, | ) })|.
+      WHEN 'regex_mismatch'.
+        rv_txt = |{ is_rule-when_field } does not match /{ is_rule-when_value }/|.
+      WHEN 'check'.
+        DATA lv_args TYPE string.
+        LOOP AT is_rule-check_args INTO DATA(ls_a).
+          lv_args = COND #( WHEN lv_args IS INITIAL THEN |{ ls_a-name }={ ls_a-value }|
+                            ELSE |{ lv_args }, { ls_a-name }={ ls_a-value }| ).
+        ENDLOOP.
+        rv_txt = |check { is_rule-check_name }( { is_rule-when_field }{ COND #( WHEN lv_args IS NOT INITIAL THEN |; { lv_args }| ) } )|.
+      WHEN OTHERS.
+        rv_txt = is_rule-when_op.
+    ENDCASE.
   ENDMETHOD.
 
 ENDCLASS.

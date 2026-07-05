@@ -1,0 +1,181 @@
+{
+  "schema": "zmdmdoc.rules.v1",
+  "rules_w9": [
+    {
+      "id": "W9-030",
+      "name": "w8_detected",
+      "applies_to": [
+        "w8"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "This is a W-8 (foreign status), not a W-9 — apply W-8 treatment; do not map to Tax Number 1/2 as a W-9.",
+      "message_ru": "Это W-8 (иностранный статус), не W-9 — другой процесс обработки.",
+      "when_op": "always",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "W9-031",
+      "name": "unknown_tax_doc",
+      "applies_to": [
+        "unknown",
+        "other_tax"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "Not recognized as a W-9 — confirm the document type before using it as US tax evidence.",
+      "message_ru": "",
+      "when_op": "always",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "W9-001",
+      "name": "line1_missing",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "W-9 Line 1 (taxpayer legal name) is missing/unreadable — Line 1 must feed SAP Name 1.",
+      "message_ru": "",
+      "when_op": "field_missing",
+      "when_field": "line1_name",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "W9-002",
+      "name": "tin_unreadable",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "TIN not readable on the form — cannot verify SSN/EIN mapping.",
+      "message_ru": "",
+      "when_op": "field_missing",
+      "when_field": "tin_raw",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "W9-003",
+      "name": "classification_missing",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "Federal tax classification (Line 3) unclear — Recipient Type cannot be verified.",
+      "message_ru": "",
+      "when_op": "field_missing",
+      "when_field": "line3_classification",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "W9-010",
+      "name": "ein_9_digits",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "TIN {value} has the wrong digit count: {detail} (EIN/SSN must be 9 digits).",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "tin_raw",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "ein_shape",
+      "check_args": [
+        {
+          "name": "digits",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "id": "W9-011",
+      "name": "tin_type_vs_classification",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "TIN type conflicts with the tax classification: {detail}. Individual/Sole proprietor normally uses SSN (Tax Number 1); businesses use EIN (Tax Number 2).",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "tin_raw",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "tin_type_vs_classification",
+      "check_args": []
+    },
+    {
+      "id": "W9-012",
+      "name": "individual_llc_ein_mix",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "Internal inconsistency: {detail}. Request clarification or an updated W-9 (rule DR-20260624-131532).",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "individual_with_business_name_and_ein",
+      "check_args": []
+    },
+    {
+      "id": "W9-013",
+      "name": "line_swap_suspect",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "Line 1 / Line 2 look swapped or collapsed: {detail}. Never swap or merge W-9 name lines (Line 1 -> Name 1, Line 2 -> Name 2).",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "line_swap_suspect",
+      "check_args": []
+    },
+    {
+      "id": "W9-020",
+      "name": "unsigned",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "WARNING",
+      "message": "W-9 appears unsigned — note for review (blocking only if packet rules say so).",
+      "message_ru": "",
+      "when_op": "flag_false",
+      "when_field": "signed",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    }
+  ]
+}

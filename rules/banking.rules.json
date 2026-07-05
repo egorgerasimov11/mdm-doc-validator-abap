@@ -1,0 +1,483 @@
+{
+  "schema": "zmdmdoc.rules.v1",
+  "rules_bank": [
+    {
+      "id": "BNK-001",
+      "name": "invoice_never_bank_proof",
+      "applies_to": [
+        "invoice"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "REJECT",
+      "message": "Invoice used as banking support — an invoice (incl. pro forma) is never acceptable, even when it shows remittance/bank details. Request a bank letter, bank statement or supplier letterhead.",
+      "message_ru": "Инвойс как банковское подтверждение не принимается (даже с реквизитами). Запросить bank letter / statement / supplier letterhead.",
+      "when_op": "always",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "BNK-002",
+      "name": "email_as_proof",
+      "applies_to": [
+        "email"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "REJECT",
+      "message": "Plain email is not normal bank support — exception-only with explicit Finance/Accounting approval evidence.",
+      "message_ru": "Обычное письмо — не банковское подтверждение; только как исключение с явным одобрением Finance/Accounting.",
+      "when_op": "always",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "BNK-003",
+      "name": "editable_source",
+      "applies_to": [
+        "editable_source"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "REJECT",
+      "message": "Editable file (.docx/.xlsx/.txt/.rtf) is not acceptable as bank proof. Request a PDF/scan on letterhead.",
+      "message_ru": "Редактируемый файл (.docx/.xlsx/.txt/.rtf) не принимается как банковское подтверждение. Запросить PDF/скан.",
+      "when_op": "always",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "BNK-005",
+      "name": "ap_form_self_certified",
+      "applies_to": [
+        "ap_document"
+      ],
+      "severity": "NOTE",
+      "verdict_effect": "",
+      "message": "Self-certified AP/HCP bank-information form (not bank-issued). Acceptable per the HCP/AP policy for this request type; verify every detail against SAP and the request context.",
+      "message_ru": "Самозаполненная AP/HCP форма банковских данных (не выпущена банком). Приемлемо по политике HCP/AP для этого типа запроса; каждую деталь сверить с SAP и контекстом запроса.",
+      "when_op": "always",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "BNK-006",
+      "name": "statement_swift_not_shown",
+      "applies_to": [
+        "bank_statement"
+      ],
+      "severity": "NOTE",
+      "verdict_effect": "",
+      "message": "Bank statement shows no SWIFT/BIC — normal for statements; take SWIFT from the SAP/request-form comparison, not from this document.",
+      "message_ru": "В выписке нет SWIFT/BIC — для выписок это норма; SWIFT берётся из сверки с SAP/формой запроса, не из этого документа.",
+      "when_op": "check",
+      "when_field": "swift_bic",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "field_empty",
+      "check_args": []
+    },
+    {
+      "id": "BNK-004",
+      "name": "payment_instructions_context",
+      "applies_to": [
+        "payment_instructions"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "WARNING",
+      "message": "Supplier payment instructions — NOT an invoice. Acceptable only as an official, non-editable supplier document (letterhead) whose details match SAP; otherwise request a bank letter or bank statement. Mind payment-method limits printed on it (e.g. 'ACH only — not for wire transfers'). Any kickback reason is 'no official supplier support', never 'invoice'.",
+      "message_ru": "Платёжные инструкции поставщика — это НЕ инвойс. Принимается только как официальный нередактируемый документ поставщика (letterhead) с реквизитами, совпадающими с SAP; иначе запросить bank letter / bank statement. Учитывай ограничения способа платежа (например, «ACH only — не для wire»). Причина kickback — «нет официального подтверждения поставщика», не «инвойс».",
+      "when_op": "always",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "BNK-010",
+      "name": "swift_shape",
+      "applies_to": [],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "SWIFT/BIC {value} fails shape/country check: {detail}.",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "swift_bic",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "swift_valid",
+      "check_args": [
+        {
+          "name": "lengths",
+          "value": "8,11"
+        }
+      ]
+    },
+    {
+      "id": "BNK-011",
+      "name": "iban_country_length",
+      "applies_to": [],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "IBAN {value_masked}: {detail}.",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "iban",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "iban_valid",
+      "check_args": [
+        {
+          "name": "table",
+          "value": "iban_length"
+        }
+      ]
+    },
+    {
+      "id": "BNK-020",
+      "name": "doc_older_than_2y",
+      "applies_to": [],
+      "severity": "NOTE",
+      "verdict_effect": "",
+      "message": "Document is older than 2 years ({detail}) — confirm the details are still current.",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "doc_date",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "date_older_than",
+      "check_args": [
+        {
+          "name": "years",
+          "value": "2"
+        }
+      ]
+    },
+    {
+      "id": "BNK-021",
+      "name": "missing_signature_bank_letter",
+      "applies_to": [
+        "bank_letter"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "WARNING",
+      "message": "Bank letter appears unsigned/unstamped (no officer block either).",
+      "message_ru": "Банковское письмо без подписи/печати (и без блока офицера).",
+      "when_op": "check",
+      "when_field": "signed",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "unsigned_no_evidence",
+      "check_args": []
+    },
+    {
+      "id": "BNK-026",
+      "name": "typed_officer_block_instead_of_signature",
+      "applies_to": [
+        "bank_letter"
+      ],
+      "severity": "NOTE",
+      "verdict_effect": "",
+      "message": "No wet signature/stamp; compensating evidence present ({detail}) — normal for system-issued bank letters; note for the Data Owner.",
+      "message_ru": "Живой подписи/печати нет; есть компенсирующее свидетельство ({detail}) — норма для системно выпускаемых банковских писем; заметка для Data Owner.",
+      "when_op": "check",
+      "when_field": "signed",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "unsigned_typed_block",
+      "check_args": []
+    },
+    {
+      "id": "BNK-022",
+      "name": "partial_screenshot",
+      "applies_to": [
+        "bank_screenshot"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "Screenshot appears cropped/partial — key fields may be cut off.",
+      "message_ru": "",
+      "when_op": "flag_true",
+      "when_field": "partial_capture",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "BNK-023",
+      "name": "missing_account_holder",
+      "applies_to": [
+        "bank_letter",
+        "supplier_letterhead",
+        "bank_screenshot",
+        "voided_check",
+        "ap_document",
+        "other"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "No account holder / beneficiary name readable on the document.",
+      "message_ru": "",
+      "when_op": "field_missing",
+      "when_field": "account_holder",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "BNK-024",
+      "name": "no_banking_identity",
+      "applies_to": [
+        "bank_letter",
+        "supplier_letterhead",
+        "bank_screenshot",
+        "voided_check",
+        "ap_document",
+        "other"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "Document shows no bank account identifiers (no IBAN, account number or routing) — cannot serve as banking evidence as-is.",
+      "message_ru": "",
+      "when_op": "check",
+      "when_field": "",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "no_bank_ids",
+      "check_args": []
+    },
+    {
+      "id": "BNK-025",
+      "name": "missing_bank_name",
+      "applies_to": [
+        "bank_letter",
+        "bank_screenshot",
+        "voided_check"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "WARNING",
+      "message": "Bank name not readable on the document.",
+      "message_ru": "",
+      "when_op": "field_missing",
+      "when_field": "bank_name",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    }
+  ],
+  "iban_length": [
+    {
+      "country": "AD",
+      "len": 24
+    },
+    {
+      "country": "AE",
+      "len": 23
+    },
+    {
+      "country": "AT",
+      "len": 20
+    },
+    {
+      "country": "BE",
+      "len": 16
+    },
+    {
+      "country": "BG",
+      "len": 22
+    },
+    {
+      "country": "BH",
+      "len": 22
+    },
+    {
+      "country": "BR",
+      "len": 29
+    },
+    {
+      "country": "CH",
+      "len": 21
+    },
+    {
+      "country": "CY",
+      "len": 28
+    },
+    {
+      "country": "CZ",
+      "len": 24
+    },
+    {
+      "country": "DE",
+      "len": 22
+    },
+    {
+      "country": "DK",
+      "len": 18
+    },
+    {
+      "country": "EE",
+      "len": 20
+    },
+    {
+      "country": "EG",
+      "len": 29
+    },
+    {
+      "country": "ES",
+      "len": 24
+    },
+    {
+      "country": "FI",
+      "len": 18
+    },
+    {
+      "country": "FR",
+      "len": 27
+    },
+    {
+      "country": "GB",
+      "len": 22
+    },
+    {
+      "country": "GR",
+      "len": 27
+    },
+    {
+      "country": "HR",
+      "len": 21
+    },
+    {
+      "country": "HU",
+      "len": 28
+    },
+    {
+      "country": "IE",
+      "len": 22
+    },
+    {
+      "country": "IL",
+      "len": 23
+    },
+    {
+      "country": "IQ",
+      "len": 23
+    },
+    {
+      "country": "IS",
+      "len": 26
+    },
+    {
+      "country": "IT",
+      "len": 27
+    },
+    {
+      "country": "JO",
+      "len": 30
+    },
+    {
+      "country": "KW",
+      "len": 30
+    },
+    {
+      "country": "LB",
+      "len": 28
+    },
+    {
+      "country": "LI",
+      "len": 21
+    },
+    {
+      "country": "LT",
+      "len": 20
+    },
+    {
+      "country": "LU",
+      "len": 20
+    },
+    {
+      "country": "LV",
+      "len": 21
+    },
+    {
+      "country": "MC",
+      "len": 27
+    },
+    {
+      "country": "MT",
+      "len": 31
+    },
+    {
+      "country": "MX",
+      "len": 18
+    },
+    {
+      "country": "NL",
+      "len": 18
+    },
+    {
+      "country": "NO",
+      "len": 15
+    },
+    {
+      "country": "PK",
+      "len": 24
+    },
+    {
+      "country": "PL",
+      "len": 28
+    },
+    {
+      "country": "PT",
+      "len": 25
+    },
+    {
+      "country": "QA",
+      "len": 29
+    },
+    {
+      "country": "RO",
+      "len": 24
+    },
+    {
+      "country": "SA",
+      "len": 24
+    },
+    {
+      "country": "SE",
+      "len": 24
+    },
+    {
+      "country": "SG",
+      "len": 19
+    },
+    {
+      "country": "SI",
+      "len": 19
+    },
+    {
+      "country": "SK",
+      "len": 24
+    },
+    {
+      "country": "TN",
+      "len": 24
+    },
+    {
+      "country": "TR",
+      "len": 26
+    }
+  ]
+}

@@ -61,6 +61,11 @@ CLASS ltcl_rules DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL
     METHODS json_override_happy      FOR TESTING.
     METHODS json_broken_fallback     FOR TESTING.
 
+    " -- rule admin: per-class swap + readable conditions -------------
+    METHODS skill_swap_partial       FOR TESTING.
+    METHODS describe_conditions      FOR TESTING.
+    METHODS list_rules_counts        FOR TESTING.
+
 ENDCLASS.
 
 
@@ -589,6 +594,58 @@ CLASS ltcl_rules IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = ls-severity exp = zif_mdmdoc_types=>c_severity-note
       msg = 'JSON-fallback ENGINE finding must be NOTE severity' ).
+  ENDMETHOD.
+
+  METHOD skill_swap_partial.
+    " Override carries ONLY rules_w9 -> the W-9 "skill" is swapped, but the
+    " banking skill keeps its generated defaults (partial per-class override).
+    DATA(lv_json) =
+      `{"schema":"zmdmdoc.rules.v1",` &&
+      `"rules_bank":[],"iban_length":[],` &&
+      `"rules_w9":[{"id":"ZZ-009","name":"custom_w9","applies_to":["w9"],` &&
+      `"severity":"WARNING","verdict_effect":"WARNING","message":"custom w9 skill",` &&
+      `"message_ru":"","when_op":"always","when_field":"","when_value":"",` &&
+      `"when_values":[],"check_name":"","check_args":[]}]}`.
+    DATA(lo) = NEW zcl_mdmdoc_rules( lv_json ).
+    " W-9 side: the swapped custom rule fires, the default W9-001 does not
+    DATA(lt_w9) = lo->run( ext( iv_class = `w9` iv_type = `w9` it_fields = VALUE #( ) ) ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_rule( it_findings = lt_w9 iv_id = `ZZ-009` )
+      msg = 'swapped W-9 skill must fire' ).
+    " banking side: generated BNK-001 STILL fires (banking not touched)
+    DATA(lt_bk) = lo->run( ext( iv_class = `bank` iv_type = `invoice` it_fields = VALUE #( ) ) ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_rule( it_findings = lt_bk iv_id = `BNK-001` )
+      msg = 'banking defaults must be preserved when only rules_w9 is overridden' ).
+  ENDMETHOD.
+
+  METHOD describe_conditions.
+    cl_abap_unit_assert=>assert_equals(
+      act = zcl_mdmdoc_rules=>describe_when( VALUE #( when_op = `always` ) ) exp = 'always' ).
+    cl_abap_unit_assert=>assert_equals(
+      act = zcl_mdmdoc_rules=>describe_when( VALUE #( when_op = `field_missing` when_field = `iban` ) )
+      exp = 'iban is empty' ).
+    cl_abap_unit_assert=>assert_equals(
+      act = zcl_mdmdoc_rules=>describe_when( VALUE #( when_op = `flag_false` when_field = `signed` ) )
+      exp = 'signed = false' ).
+    cl_abap_unit_assert=>assert_equals(
+      act = zcl_mdmdoc_rules=>describe_when( VALUE #( when_op = `equals` when_field = `doc_type` when_value = `invoice` ) )
+      exp = 'doc_type = "invoice"' ).
+    DATA(lv_in) = zcl_mdmdoc_rules=>describe_when(
+      VALUE #( when_op = `in` when_field = `status` when_values = VALUE #( ( `a` ) ( `b` ) ) ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_in CS 'status in' AND lv_in CS 'a' AND lv_in CS 'b' ) ).
+    DATA(lv_chk) = zcl_mdmdoc_rules=>describe_when(
+      VALUE #( when_op = `check` check_name = `iban_valid` when_field = `iban` ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_chk CS 'check iban_valid' AND lv_chk CS 'iban' ) ).
+  ENDMETHOD.
+
+  METHOD list_rules_counts.
+    cl_abap_unit_assert=>assert_equals(
+      act = lines( zcl_mdmdoc_rules=>list_rules( `bank` ) ) exp = 15 ).
+    cl_abap_unit_assert=>assert_equals(
+      act = lines( zcl_mdmdoc_rules=>list_rules( `w9` ) ) exp = 10 ).
+    cl_abap_unit_assert=>assert_equals(
+      act = lines( zcl_mdmdoc_rules=>list_rules( ) ) exp = 25 ).
   ENDMETHOD.
 
 ENDCLASS.

@@ -269,23 +269,33 @@ def main() -> None:
     xml_path = SRC_DIR / "zcl_mdmdoc_rules_data.clas.xml"
     xml_path.write_text(CLAS_XML, encoding="utf-8")
 
-    combined = {
-        "schema": "zmdmdoc.rules.v1",
-        "rules_bank": [
-            {k: v for k, v in r.items()} for r in bank
-        ],
-        "rules_w9": [
-            {k: v for k, v in r.items()} for r in w9
-        ],
-        "iban_length": [
-            {"country": c, "len": int(iban_len[c])} for c in sorted(iban_len)
-        ],
-    }
-    (RULES_DIR / "rules.json").write_text(
-        json.dumps(combined, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    bank_rules = [dict(r) for r in bank]
+    w9_rules = [dict(r) for r in w9]
+    iban_rows = [{"country": c, "len": int(iban_len[c])} for c in sorted(iban_len)]
 
-    print(f"OK: {len(bank)} bank rules, {len(w9)} w9 rules, "
-          f"{len(iban_len)} iban lengths -> zcl_mdmdoc_rules_data.clas.abap + rules/rules.json")
+    def dump(path, obj):
+        path.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    # combined override (both classes) — the default rules.json
+    dump(RULES_DIR / "rules.json", {
+        "schema": "zmdmdoc.rules.v1",
+        "rules_bank": bank_rules,
+        "rules_w9": w9_rules,
+        "iban_length": iban_rows,
+    })
+    # per-class "skill" packs — swap one without touching the other (partial override)
+    dump(RULES_DIR / "banking.rules.json", {
+        "schema": "zmdmdoc.rules.v1",
+        "rules_bank": bank_rules,
+        "iban_length": iban_rows,
+    })
+    dump(RULES_DIR / "w9.rules.json", {
+        "schema": "zmdmdoc.rules.v1",
+        "rules_w9": w9_rules,
+    })
+
+    print(f"OK: {len(bank)} bank rules, {len(w9)} w9 rules, {len(iban_len)} iban lengths "
+          f"-> zcl_mdmdoc_rules_data.clas.abap + rules/{{rules,banking.rules,w9.rules}}.json")
 
 
 if __name__ == "__main__":
