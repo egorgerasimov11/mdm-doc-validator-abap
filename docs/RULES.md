@@ -65,6 +65,14 @@
 обучение, можно редактировать/удалять/заменять правило-скилл и нажать regenerate. Подробнее — в
 `README.md` (раздел «Локальный UI») и `docs/INTEGRATION.md`.
 
+## Способ 4 — обновить из checker-скилла (mdm-w9-checker и т.п.)
+
+Если правило пришло из вашего SAP-скилла (`mdm-w9-checker`, `mdm-banking-checker`), обновлённого
+через Codex: команда `mdmdoc skill-rules <скилл>` в Python-проекте показывает правила скилла и что
+из них уже механизировано в валидаторе, что advisory, что требует SAP-контекста; перенос
+механизируемых правил в `rules/*.yaml` + regenerate — по процедуре Claude-скилла `mdmdoc-skill-sync`.
+Подробно — `~/Projects/mdm-doc-validator/docs/SKILL_SYNC.md`.
+
 ## Важно
 
 - Низкоуровневые проверки (IBAN mod-97, `ein_shape`, `swift_valid`…) — это скомпилированные
