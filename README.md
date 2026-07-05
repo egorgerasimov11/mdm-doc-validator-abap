@@ -129,6 +129,16 @@ python3 tools/gen_rules_abap.py     # перегенерирует src/zcl_mdmdo
   `ZCL_MDMDOC_PDF`); затем `/UI2/CL_JSON`; затем поведение `CL_ABAP_ZIP` при несовпадении CRC.
   Всё остальное — стандарт с 7.40.
 
+## Сверка с Change Request (MDG)
+
+Дополнительно есть сверка документа с данными **MDG Change Request**: при проверке заявки
+(BAdI `USMD_RULE_SERVICE` → `ZCL_MDG_BP_FIELD_DERR_VAL`) система читает вложение CR, извлекает
+реквизиты, читает поля самой заявки (`io_model->read_entity_data_all`) и выдаёт **warning** при
+расхождениях (IBAN/SWIFT/account/имя/страна…). Логика сравнения (`ZCL_MDMDOC_COMPARE`,
+правила `SAP-000..008`) — источник-независима и покрыта юнит-тестами; MDG-специфика изолирована
+в `ZCL_MDMDOC_MDG_READER` + BAdI-классе (помечены verify-on-system, вне abaplint).
+Внедрение — **глава 10 в [docs/INTEGRATION.md](docs/INTEGRATION.md)**.
+
 ## Что НЕ переносилось из оригинала
 
 Веб-панель/REST API, teach loop (review → labels → few-shot → LoRA → adoption gate),

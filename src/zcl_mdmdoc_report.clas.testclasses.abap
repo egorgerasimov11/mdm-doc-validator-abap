@@ -12,6 +12,8 @@ CLASS ltcl_report DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT.
     METHODS w9_sap_hints         FOR TESTING.
     METHODS json_is_valid        FOR TESTING.
     METHODS json_no_full_tin     FOR TESTING.
+    METHODS sap_block_rendered   FOR TESTING.
+    METHODS sap_compare_in_json  FOR TESTING.
 ENDCLASS.
 
 CLASS ltcl_report IMPLEMENTATION.
@@ -98,6 +100,41 @@ CLASS ltcl_report IMPLEMENTATION.
       iv_doc_path = '/tmp/w9.pdf' iv_run_id = 'ffee00112233aabb' iv_lang = 'EN' iv_policy = 'full' ).
     cl_abap_unit_assert=>assert_false( boolc( lv_json CS '987654321' ) ).
     cl_abap_unit_assert=>assert_true( boolc( lv_json CS '"tin":' ) ).
+  ENDMETHOD.
+
+  METHOD sap_block_rendered.
+    DATA(ls_ext) = build_bank_fields( ).
+    DATA(lt_cmp) = VALUE zif_mdmdoc_types=>tt_compare_row(
+      ( field = 'IBAN' doc = 'DE**…4931' sap = 'DE**…4999' status = 'MISMATCH' note = 'differs from position 21' ) ).
+    DATA(lt) = zcl_mdmdoc_report=>build_list(
+      is_ext = ls_ext it_findings = VALUE #( ) iv_verdict = 'NEED_MANUAL_REVIEW'
+      iv_lang = 'EN' iv_policy = 'masked' it_compare = lt_cmp ).
+    DATA(lv_all) = concat_lines_of( table = lt sep = |#| ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_all CS 'SAP COMPARISON' ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_all CS 'MISMATCH' ) ).
+    " empty compare -> no block
+    DATA(lt2) = zcl_mdmdoc_report=>build_list(
+      is_ext = ls_ext it_findings = VALUE #( ) iv_verdict = 'ACCEPT' iv_lang = 'EN' iv_policy = 'masked' ).
+    cl_abap_unit_assert=>assert_false( boolc( concat_lines_of( table = lt2 sep = |#| ) CS 'SAP COMPARISON' ) ).
+  ENDMETHOD.
+
+  METHOD sap_compare_in_json.
+    DATA(ls_ext) = build_bank_fields( ).
+    DATA(lt_cmp) = VALUE zif_mdmdoc_types=>tt_compare_row(
+      ( field = 'IBAN' doc = 'DE**…4931' sap = 'DE**…4999' status = 'MISMATCH' note = 'differs from position 21' ) ).
+    DATA(lv_json) = zcl_mdmdoc_report=>build_json(
+      is_ext = ls_ext it_findings = VALUE #( ) iv_verdict = 'NEED_MANUAL_REVIEW'
+      iv_doc_path = '/tmp/x.pdf' iv_run_id = 'abcdef0123456789' iv_lang = 'EN'
+      iv_policy = 'masked' it_compare = lt_cmp ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_json CS '"sap_compare":' ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_json CS '"status": "MISMATCH"' ) ).
+    " still valid JSON
+    DATA lr_data TYPE REF TO data.
+    TRY.
+        /ui2/cl_json=>deserialize( EXPORTING json = lv_json CHANGING data = lr_data ).
+      CATCH cx_root.
+        cl_abap_unit_assert=>fail( 'sap_compare broke JSON' ).
+    ENDTRY.
   ENDMETHOD.
 
 ENDCLASS.

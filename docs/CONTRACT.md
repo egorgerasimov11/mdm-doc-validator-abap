@@ -235,3 +235,47 @@ build_json IMPORTING is_ext TYPE zif_mdmdoc_types=>ty_extraction
  </asx:abap>
 </abapGit>
 ```
+
+## SAP Change Request comparison (feature 2)
+
+Source-independent comparator + pluggable reader. Only the two MDG classes touch
+the MDG framework (excluded from abaplint, `verify-on-system`); everything else is
+pure ABAP and unit-tested.
+
+### ZCL_MDMDOC_COMPARE (CLASS-METHODS; port of sap_compare.py)
+
+```abap
+compare IMPORTING is_ext TYPE ty_extraction it_sap TYPE tt_sap_fields iv_policy TYPE string DEFAULT 'masked'
+        EXPORTING et_findings TYPE tt_findings et_rows TYPE tt_compare_row.
+  " SAP-001 IBAN mismatch (char-by-char, first-diff pos, CRITICAL/REVIEW)
+  " SAP-002 IBAN only-one-side (WARNING); SAP-003 account (0-pad + in-IBAN tolerance, CRITICAL)
+  " SAP-004 SWIFT (±XXX, CRITICAL); SAP-005 country to_iso2 (CRITICAL)
+  " SAP-006 bank_key unconfirmed-by-document (WARNING); SAP-007 bank name substring (WARNING)
+  " SAP-008 account holder substring (CRITICAL); SAP-000 all-match (NOTE)
+  " both sides masked via zcl_mdmdoc_mask; full sensitive values never leave.
+```
+
+### ZIF_MDMDOC_SAP_READER (adapter)
+
+```abap
+read_cr_fields      IMPORTING iv_cr EXPORTING et_sap TYPE tt_sap_fields ev_found ev_error.
+read_cr_attachments IMPORTING iv_cr EXPORTING et_docs TYPE tt_attachment ev_error.
+```
+
+- `ZCL_MDMDOC_SAP_MANUAL` — implements it from a direct table or flat JSON `{sap_field:value}`
+  (test double / no-SAP fallback).
+- `ZCL_MDMDOC_MDG_READER` — implements it over MDG: `constructor( io_model TYPE REF TO
+  if_usmd_model_ext, iv_crequest )`; `read_cr_fields` via `io_model->read_entity_data_all`
+  (entities BP_CENTRL/ADDRESS/BP_BANKDT/BP_IBAN/BP_TAXNUM → SAP_KEYS), attachments via GOS.
+  **verify-on-system.**
+
+### ZCL_MDG_BP_FIELD_DERR_VAL (BAdI USMD_RULE_SERVICE)
+
+`IF_EX_USMD_RULE_SERVICE~CHECK_ENTITY` (anchor guard on BP_BANKDT) → read attachment + CR fields →
+deterministic pipeline (LLM off) → `ZCL_MDMDOC_COMPARE` → findings emitted as CR messages
+(WARNING; REJECT→E). **verify-on-system.** Deploy: see docs/INTEGRATION.md chapter 10.
+
+### ZCL_MDMDOC_REPORT (extended)
+
+`build_list` / `build_json` gained optional `it_compare TYPE tt_compare_row` → renders a
+`SAP COMPARISON` block and a `sap_compare` JSON array (empty → omitted, backward compatible).

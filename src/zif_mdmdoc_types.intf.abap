@@ -108,4 +108,34 @@ INTERFACE zif_mdmdoc_types
     `iban:iban,account_number:account_number,routing_aba:routing_aba,` &
     `routing_aba_wires:routing_aba,tin_raw:tin,tin_boxed:tin,ein:ein,ssn:ssn`.
 
+  " ---- SAP Change Request comparison (sap_compare.py) ---------------------
+  " SAP-side field set read from a change request / master record.
+  TYPES: BEGIN OF ty_sap_field,
+           name  TYPE string,
+           value TYPE string,
+         END OF ty_sap_field,
+         tt_sap_fields TYPE HASHED TABLE OF ty_sap_field WITH UNIQUE KEY name.
+
+  " One rendered comparison row (report.py sap_block).
+  TYPES: BEGIN OF ty_compare_row,
+           field  TYPE string,
+           doc    TYPE string,   " document-side value (masked per policy)
+           sap    TYPE string,   " SAP-side value (masked per policy)
+           status TYPE string,   " match | MISMATCH | only-one-side | sap-only
+           note   TYPE string,
+         END OF ty_compare_row,
+         tt_compare_row TYPE STANDARD TABLE OF ty_compare_row WITH EMPTY KEY.
+
+  " SAP_KEYS (sap_compare.py) — the SAP-side field names, split on ',' at runtime.
+  CONSTANTS c_sap_keys TYPE string VALUE
+    `bank_details_id,bank_account,account_holder,iban,account_name,control_key,` &
+    `reference_details,bank_country,bank_key,bank_name,street,city,bank_branch,swift_bic`.
+
+  CONSTANTS: BEGIN OF c_cmp_status,
+               match     TYPE string VALUE 'match',
+               mismatch  TYPE string VALUE 'MISMATCH',
+               one_side  TYPE string VALUE 'only-one-side',
+               sap_only  TYPE string VALUE 'sap-only',
+             END OF c_cmp_status.
+
 ENDINTERFACE.

@@ -1,6 +1,10 @@
 {
   "global": {
-    "files": "/src/**/*.*"
+    "files": "/src/**/*.*",
+    "exclude": [
+      "zcl_mdmdoc_mdg_reader\\.clas\\.abap$",
+      "zcl_mdg_bp_field_derr_val\\.clas\\.abap$"
+    ]
   },
   "dependencies": [
     {

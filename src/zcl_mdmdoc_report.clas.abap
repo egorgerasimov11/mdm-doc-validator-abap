@@ -15,6 +15,7 @@ CLASS zcl_mdmdoc_report DEFINITION
                 iv_verdict      TYPE string
                 iv_lang         TYPE string   DEFAULT 'EN'
                 iv_policy       TYPE string   DEFAULT 'masked'
+                it_compare      TYPE zif_mdmdoc_types=>tt_compare_row OPTIONAL
       RETURNING VALUE(rt_lines) TYPE string_table.
 
     CLASS-METHODS build_json
@@ -25,6 +26,7 @@ CLASS zcl_mdmdoc_report DEFINITION
                 iv_run_id      TYPE string
                 iv_lang        TYPE string DEFAULT 'EN'
                 iv_policy      TYPE string DEFAULT 'masked'
+                it_compare     TYPE zif_mdmdoc_types=>tt_compare_row OPTIONAL
       RETURNING VALUE(rv_json) TYPE string.
 
   PRIVATE SECTION.
@@ -110,6 +112,15 @@ CLASS zcl_mdmdoc_report DEFINITION
                 iv_sev      TYPE string
                 iv_title    TYPE string
       CHANGING  ct_lines    TYPE string_table.
+
+    CLASS-METHODS append_sap_block
+      IMPORTING it_compare TYPE zif_mdmdoc_types=>tt_compare_row
+                iv_lang    TYPE string
+      CHANGING  ct_lines   TYPE string_table.
+
+    CLASS-METHODS json_compare
+      IMPORTING it_compare     TYPE zif_mdmdoc_types=>tt_compare_row
+      RETURNING VALUE(rv_json) TYPE string.
 ENDCLASS.
 
 
@@ -356,6 +367,42 @@ CLASS zcl_mdmdoc_report IMPLEMENTATION.
         APPEND |  { lv_cc }| TO rt_lines.
       ENDLOOP.
     ENDIF.
+
+    " SAP comparison block (report.py sap_block)
+    append_sap_block( EXPORTING it_compare = it_compare iv_lang = iv_lang CHANGING ct_lines = rt_lines ).
+  ENDMETHOD.
+
+  METHOD append_sap_block.
+    IF it_compare IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA lv_wf TYPE i.
+    DATA lv_wd TYPE i.
+    DATA lv_ws TYPE i.
+    lv_wf = 5.
+    lv_wd = 8.
+    lv_ws = 8.
+    LOOP AT it_compare ASSIGNING FIELD-SYMBOL(<c>).
+      IF strlen( <c>-field ) > lv_wf.
+        lv_wf = strlen( <c>-field ).
+      ENDIF.
+      IF strlen( <c>-doc ) > lv_wd.
+        lv_wd = strlen( <c>-doc ).
+      ENDIF.
+      IF strlen( <c>-sap ) > lv_ws.
+        lv_ws = strlen( <c>-sap ).
+      ENDIF.
+    ENDLOOP.
+    APPEND || TO ct_lines.
+    DATA(lv_hdr) = lbl( iv_en = |SAP COMPARISON| iv_ru = |СВЕРКА С SAP| iv_lang = iv_lang ).
+    APPEND |---------------- { lv_hdr } ----------------| TO ct_lines.
+    APPEND |{ 'field' WIDTH = lv_wf ALIGN = LEFT }   { 'document' WIDTH = lv_wd ALIGN = LEFT }   | &&
+           |{ 'SAP' WIDTH = lv_ws ALIGN = LEFT }   result| TO ct_lines.
+    LOOP AT it_compare ASSIGNING <c>.
+      DATA(lv_res) = COND string( WHEN <c>-note IS NOT INITIAL THEN |{ <c>-status } ({ <c>-note })| ELSE <c>-status ).
+      APPEND |{ <c>-field WIDTH = lv_wf ALIGN = LEFT }   { <c>-doc WIDTH = lv_wd ALIGN = LEFT }   | &&
+             |{ <c>-sap WIDTH = lv_ws ALIGN = LEFT }   { lv_res }| TO ct_lines.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD jesc.
@@ -435,10 +482,20 @@ CLASS zcl_mdmdoc_report IMPLEMENTATION.
       |  "findings": [{ concat_lines_of( table = lt_find sep = |, | ) }],\n| &&
       |  "fields": { json_fields( is_ext = is_ext iv_policy = iv_policy ) },\n| &&
       |  "crosscheck": [{ concat_lines_of( table = lt_cc sep = |, | ) }],\n| &&
+      |  "sap_compare": { json_compare( it_compare ) },\n| &&
       |  "warnings": [{ concat_lines_of( table = lt_wn sep = |, | ) }],\n| &&
       |  "model": { jstr( is_ext-model_id ) },\n| &&
       |  "ts": { jstr( lv_ts ) }\n| &&
       |\}|.
+  ENDMETHOD.
+
+  METHOD json_compare.
+    DATA lt_parts TYPE string_table.
+    LOOP AT it_compare ASSIGNING FIELD-SYMBOL(<c>).
+      APPEND |\{ "field": { jstr( <c>-field ) }, "doc": { jstr( <c>-doc ) }, "sap": { jstr( <c>-sap ) }, | &&
+             |"status": { jstr( <c>-status ) }, "note": { jstr( <c>-note ) } \}| TO lt_parts.
+    ENDLOOP.
+    rv_json = |[{ concat_lines_of( table = lt_parts sep = |, | ) }]|.
   ENDMETHOD.
 
   METHOD append_group.
