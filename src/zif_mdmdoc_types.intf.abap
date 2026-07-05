@@ -138,4 +138,26 @@ INTERFACE zif_mdmdoc_types
                sap_only  TYPE string VALUE 'sap-only',
              END OF c_cmp_status.
 
+  " ---- Deployment self-test / pre-flight checks -------------------------
+  TYPES: BEGIN OF ty_check,
+           name   TYPE string,
+           status TYPE string,   " PASS | FAIL | SKIP
+           detail TYPE string,
+         END OF ty_check,
+         tt_check TYPE STANDARD TABLE OF ty_check WITH EMPTY KEY.
+
+  CONSTANTS: BEGIN OF c_check,
+               pass TYPE string VALUE 'PASS',
+               fail TYPE string VALUE 'FAIL',
+               skip TYPE string VALUE 'SKIP',
+             END OF c_check.
+
+  " ---- Adaptable MDG mapping (SAP_KEY -> entity/field) ------------------
+  TYPES: BEGIN OF ty_map,
+           sap_key TYPE string,
+           entity  TYPE string,
+           field   TYPE string,
+         END OF ty_map,
+         tt_map TYPE STANDARD TABLE OF ty_map WITH EMPTY KEY.
+
 ENDINTERFACE.

@@ -279,3 +279,33 @@ deterministic pipeline (LLM off) → `ZCL_MDMDOC_COMPARE` → findings emitted a
 
 `build_list` / `build_json` gained optional `it_compare TYPE tt_compare_row` → renders a
 `SAP COMPARISON` block and a `sap_compare` JSON array (empty → omitted, backward compatible).
+
+## Deployment: pre-flight + adaptable mapping (feature 3)
+
+### ZCL_MDMDOC_SELFTEST (pure, unit-tested)
+
+```abap
+run_core         RETURNING VALUE(rt_checks) TYPE tt_check.   " all non-MDG checks
+check_class      IMPORTING iv_name RETURNING ty_check.       " RTTI existence
+check_json / check_mask / check_pdf / check_comparator RETURNING ty_check.
+```
+`ty_check` = { name, status (PASS|FAIL|SKIP), detail } in ZIF_MDMDOC_TYPES.
+
+### ZMDMDOC_DOCTOR (report, verify-on-system)
+
+Runs `run_core` + MDG availability + optional live CR read (p_cr) → colored PASS/FAIL list.
+
+### ZCL_MDMDOC_MDG_MAP (verify-on-system)
+
+```abap
+get_map  IMPORTING iv_model TYPE usmd_model RETURNING VALUE(rt_map) TYPE tt_map.
+defaults RETURNING VALUE(rt_map) TYPE tt_map.
+```
+`tt_map` = { sap_key, entity, field }. Defaults overlaid by optional table ZMDMDOC_MAP
+(dynamic SELECT — activates even without the table). ZCL_MDMDOC_MDG_READER is table-driven
+off this map (no hard-coded entity/field names).
+
+### ZMDMDOC_MDG_DISCOVER (report, verify-on-system)
+
+Reads the live MDG model (entities+fields via RTTI), matches field names to synonyms, proposes
+the SAP_KEY→entity.field mapping, lists gaps, optional save to ZMDMDOC_MAP.

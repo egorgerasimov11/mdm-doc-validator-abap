@@ -6,34 +6,29 @@ CLASS zcl_mdmdoc_mdg_reader DEFINITION
 *----------------------------------------------------------------------*
 * MDG change-request reader (implements ZIF_MDMDOC_SAP_READER).
 *
-* *** VERIFY ON SYSTEM ***
-* This class touches MDG framework types/APIs that are NOT available in the
-* offline abaplint check, so it is excluded from abaplint (see abaplint.json).
-* The read_entity_data_all pattern matches the standard MDG model call; the
-* exact entity/field technical names below MUST be confirmed against your data
-* model 'BP' (MDGIMG -> Data Modelling -> Edit Data Model / tx USMD_ENTITY),
-* and the attachment API against your MDG release. All SAP-specific access is
-* contained here; the comparator, types, report and tests do not depend on it.
+* Config-driven: the SAP_KEY -> (entity, field) mapping comes from
+* ZCL_MDMDOC_MDG_MAP (defaults, overridable by table ZMDMDOC_MAP), so entity
+* and field names are NOT hard-coded here — run ZMDMDOC_MDG_DISCOVER to adapt
+* the mapping to your data model.
+*
+* *** VERIFY ON SYSTEM *** — excluded from abaplint (MDG framework types).
+* Confirm the read_entity_data_all / create_data_reference calls and the
+* attachment API against your MDG release. All SAP-specific access is here;
+* the comparator, types, report, self-test and tests do not depend on it.
 *----------------------------------------------------------------------*
   PUBLIC SECTION.
     INTERFACES zif_mdmdoc_sap_reader.
 
     METHODS constructor
       IMPORTING io_model    TYPE REF TO if_usmd_model_ext
-                iv_crequest TYPE usmd_crequest.
+                iv_crequest TYPE usmd_crequest
+                iv_model    TYPE usmd_model DEFAULT 'BP'.
 
   PRIVATE SECTION.
     DATA mo_model TYPE REF TO if_usmd_model_ext.
     DATA mv_creq  TYPE usmd_crequest.
+    DATA mv_model TYPE usmd_model.
     DATA mt_sap   TYPE zif_mdmdoc_types=>tt_sap_fields.
-
-    " Entity technical names in data model BP — CONFIRM against your model.
-    CONSTANTS: c_ent_centrl  TYPE usmd_entity VALUE 'BP_CENTRL',
-               c_ent_header  TYPE usmd_entity VALUE 'BP_HEADER',
-               c_ent_address TYPE usmd_entity VALUE 'ADDRESS',
-               c_ent_bankdt  TYPE usmd_entity VALUE 'BP_BANKDT',
-               c_ent_iban    TYPE usmd_entity VALUE 'BP_IBAN',
-               c_ent_taxnum  TYPE usmd_entity VALUE 'BP_TAXNUM'.
 
     METHODS read_entity
       IMPORTING iv_entity TYPE usmd_entity
@@ -48,10 +43,6 @@ CLASS zcl_mdmdoc_mdg_reader DEFINITION
                 iv_comp         TYPE string
       RETURNING VALUE(rv_value) TYPE string.
 
-    METHODS map_name.
-    METHODS map_address.
-    METHODS map_bank.
-    METHODS map_tax.
     METHODS derive_bank_master.
 ENDCLASS.
 
@@ -61,18 +52,17 @@ CLASS zcl_mdmdoc_mdg_reader IMPLEMENTATION.
   METHOD constructor.
     mo_model = io_model.
     mv_creq  = iv_crequest.
+    mv_model = iv_model.
   ENDMETHOD.
 
   METHOD read_entity.
-    " Build a data reference matching the entity structure, then read the
-    " change-request (staged, if_active = space) data for that entity.
     CLEAR er_data.
     TRY.
         mo_model->create_data_reference(
-          EXPORTING i_fieldname  = iv_entity
-                    i_struct     = if_usmd_model=>gc_struct_key_attr   " key + attributes
-                    if_table     = abap_true
-          IMPORTING er_data      = er_data ).
+          EXPORTING i_fieldname = iv_entity
+                    i_struct    = if_usmd_model=>gc_struct_key_attr
+                    if_table    = abap_true
+          IMPORTING er_data     = er_data ).
         ASSIGN er_data->* TO FIELD-SYMBOL(<lt>).
         IF <lt> IS NOT ASSIGNED.
           RETURN.
@@ -107,80 +97,13 @@ CLASS zcl_mdmdoc_mdg_reader IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
-  METHOD map_name.
-    read_entity( EXPORTING iv_entity = c_ent_centrl IMPORTING er_data = DATA(lr) ).
-    IF lr IS INITIAL.
-      read_entity( EXPORTING iv_entity = c_ent_header IMPORTING er_data = lr ).
-    ENDIF.
-    IF lr IS INITIAL.
-      RETURN.
-    ENDIF.
-    ASSIGN lr->* TO FIELD-SYMBOL(<lt>).
-    LOOP AT <lt> ASSIGNING FIELD-SYMBOL(<row>).
-      " organisation name (NAME_ORG1/2) or person (NAME_FIRST/LAST) — CONFIRM
-      DATA(lv_name) = comp( is_row = <row> iv_comp = 'NAME_ORG1' ).
-      DATA(lv_org2) = comp( is_row = <row> iv_comp = 'NAME_ORG2' ).
-      IF lv_name IS INITIAL.
-        lv_name = |{ comp( is_row = <row> iv_comp = 'NAME_FIRST' ) } { comp( is_row = <row> iv_comp = 'NAME_LAST' ) }|.
-        CONDENSE lv_name.
-      ELSEIF lv_org2 IS NOT INITIAL.
-        lv_name = |{ lv_name } { lv_org2 }|.
-      ENDIF.
-      set_sap( iv_key = 'account_holder' iv_value = lv_name ).
-      set_sap( iv_key = 'account_name'   iv_value = lv_name ).
-      EXIT.
-    ENDLOOP.
-  ENDMETHOD.
-
-  METHOD map_address.
-    read_entity( EXPORTING iv_entity = c_ent_address IMPORTING er_data = DATA(lr) ).
-    IF lr IS INITIAL.
-      RETURN.
-    ENDIF.
-    ASSIGN lr->* TO FIELD-SYMBOL(<lt>).
-    LOOP AT <lt> ASSIGNING FIELD-SYMBOL(<row>).
-      set_sap( iv_key = 'street' iv_value = comp( is_row = <row> iv_comp = 'STREET' ) ).
-      set_sap( iv_key = 'city'   iv_value = comp( is_row = <row> iv_comp = 'CITY1' ) ).
-      EXIT.
-    ENDLOOP.
-  ENDMETHOD.
-
-  METHOD map_bank.
-    read_entity( EXPORTING iv_entity = c_ent_bankdt IMPORTING er_data = DATA(lr) ).
-    IF lr IS NOT INITIAL.
-      ASSIGN lr->* TO FIELD-SYMBOL(<lt>).
-      LOOP AT <lt> ASSIGNING FIELD-SYMBOL(<row>).
-        set_sap( iv_key = 'bank_country' iv_value = comp( is_row = <row> iv_comp = 'BANKS' ) ).
-        set_sap( iv_key = 'bank_key'     iv_value = comp( is_row = <row> iv_comp = 'BANKL' ) ).
-        set_sap( iv_key = 'bank_account' iv_value = comp( is_row = <row> iv_comp = 'BANKN' ) ).
-        set_sap( iv_key = 'control_key'  iv_value = comp( is_row = <row> iv_comp = 'BKONT' ) ).
-        set_sap( iv_key = 'iban'         iv_value = comp( is_row = <row> iv_comp = 'IBAN' ) ).
-        EXIT.
-      ENDLOOP.
-    ENDIF.
-    " IBAN may live in a separate entity
-    IF NOT line_exists( mt_sap[ name = 'iban' ] ).
-      read_entity( EXPORTING iv_entity = c_ent_iban IMPORTING er_data = DATA(lri) ).
-      IF lri IS NOT INITIAL.
-        ASSIGN lri->* TO FIELD-SYMBOL(<lti>).
-        LOOP AT <lti> ASSIGNING FIELD-SYMBOL(<ri>).
-          set_sap( iv_key = 'iban' iv_value = comp( is_row = <ri> iv_comp = 'IBAN' ) ).
-          EXIT.
-        ENDLOOP.
-      ENDIF.
-    ENDIF.
-    derive_bank_master( ).
-  ENDMETHOD.
-
   METHOD derive_bank_master.
     " bank name + SWIFT from the active bank master (BNKA) by country + bank key
-    DATA(lv_banks) = COND banks( WHEN line_exists( mt_sap[ name = 'bank_country' ] )
-                                 THEN CONV banks( mt_sap[ name = 'bank_country' ]-value ) ).
-    DATA(lv_bankl) = COND bankk( WHEN line_exists( mt_sap[ name = 'bank_key' ] )
-                                 THEN CONV bankk( mt_sap[ name = 'bank_key' ]-value ) ).
-    IF lv_banks IS INITIAL OR lv_bankl IS INITIAL.
+    IF NOT line_exists( mt_sap[ name = 'bank_country' ] ) OR NOT line_exists( mt_sap[ name = 'bank_key' ] ).
       RETURN.
     ENDIF.
+    DATA(lv_banks) = CONV banks( mt_sap[ name = 'bank_country' ]-value ).
+    DATA(lv_bankl) = CONV bankk( mt_sap[ name = 'bank_key' ]-value ).
     SELECT SINGLE banka, swift FROM bnka
       INTO @DATA(ls_bnka)
       WHERE banks = @lv_banks AND bankl = @lv_bankl.
@@ -190,30 +113,40 @@ CLASS zcl_mdmdoc_mdg_reader IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
-  METHOD map_tax.
-    read_entity( EXPORTING iv_entity = c_ent_taxnum IMPORTING er_data = DATA(lr) ).
-    IF lr IS INITIAL.
-      RETURN.
-    ENDIF.
-    ASSIGN lr->* TO FIELD-SYMBOL(<lt>).
-    LOOP AT <lt> ASSIGNING FIELD-SYMBOL(<row>).
-      DATA(lv_type) = comp( is_row = <row> iv_comp = 'TAXTYPE' ).
-      " US tax types (US1 = SSN, US2 = EIN) — CONFIRM the types you use
-      IF lv_type CP 'US*'.
-        set_sap( iv_key = 'tin' iv_value = comp( is_row = <row> iv_comp = 'TAXNUM' ) ).
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-  ENDMETHOD.
-
   METHOD zif_mdmdoc_sap_reader~read_cr_fields.
     CLEAR: et_sap, ev_found, ev_error.
     CLEAR mt_sap.
     TRY.
-        map_name( ).
-        map_address( ).
-        map_bank( ).
-        map_tax( ).
+        DATA(lt_map) = zcl_mdmdoc_mdg_map=>get_map( mv_model ).
+
+        " distinct entities in the mapping
+        DATA lt_ent TYPE STANDARD TABLE OF usmd_entity.
+        LOOP AT lt_map INTO DATA(ls_m).
+          IF ls_m-entity IS NOT INITIAL AND NOT line_exists( lt_ent[ table_line = ls_m-entity ] ).
+            APPEND CONV usmd_entity( ls_m-entity ) TO lt_ent.
+          ENDIF.
+        ENDLOOP.
+
+        " read each entity once, copy the mapped fields from its first row
+        LOOP AT lt_ent INTO DATA(lv_ent).
+          read_entity( EXPORTING iv_entity = lv_ent IMPORTING er_data = DATA(lr) ).
+          IF lr IS INITIAL.
+            CONTINUE.
+          ENDIF.
+          ASSIGN lr->* TO FIELD-SYMBOL(<lt>).
+          LOOP AT <lt> ASSIGNING FIELD-SYMBOL(<row>).
+            LOOP AT lt_map INTO ls_m WHERE entity = lv_ent.
+              set_sap( iv_key = ls_m-sap_key iv_value = comp( is_row = <row> iv_comp = ls_m-field ) ).
+            ENDLOOP.
+            EXIT.   " first row per entity (e.g. primary bank detail)
+          ENDLOOP.
+        ENDLOOP.
+
+        " mirror holder into account_name, derive bank master (name/SWIFT)
+        IF line_exists( mt_sap[ name = 'account_holder' ] ) AND NOT line_exists( mt_sap[ name = 'account_name' ] ).
+          set_sap( iv_key = 'account_name' iv_value = mt_sap[ name = 'account_holder' ]-value ).
+        ENDIF.
+        derive_bank_master( ).
       CATCH cx_root INTO DATA(lx).
         ev_error = lx->get_text( ).
     ENDTRY.
@@ -225,7 +158,6 @@ CLASS zcl_mdmdoc_mdg_reader IMPLEMENTATION.
     CLEAR: et_docs, ev_error.
     " CR attachments are GOS attachments on the change-request object.
     " *** VERIFY ON SYSTEM ***: object type + GOS API differ by MDG release.
-    " Typical path (S/4): cl_gos_api for object { objtype='USMD_CREQ' objkey=cr }.
     DATA ls_obj TYPE sibflporb.
     ls_obj-typeid = 'USMD_CREQ'.               " CONFIRM BOR/IBO object type of the CR
     ls_obj-instid = iv_cr.
@@ -234,8 +166,8 @@ CLASS zcl_mdmdoc_mdg_reader IMPLEMENTATION.
         DATA(lo_gos) = cl_gos_api=>create_instance( is_object = ls_obj ).
         DATA(lt_att) = lo_gos->get_atta_list( ).
         LOOP AT lt_att INTO DATA(ls_att).
-          DATA(lo_doc) = lo_gos->read_attachment( is_attachment_key = ls_att-atta_key ).
-          DATA(lv_content) = lo_doc->get_content( ).       " xstring
+          DATA(lo_doc)     = lo_gos->read_attachment( is_attachment_key = ls_att-atta_key ).
+          DATA(lv_content) = lo_doc->get_content( ).
           DATA(lv_name)    = lo_doc->get_description( ).
           DATA lv_ext TYPE string.
           FIND REGEX '\.([A-Za-z0-9]+)$' IN lv_name SUBMATCHES lv_ext.

@@ -139,6 +139,11 @@ python3 tools/gen_rules_abap.py     # перегенерирует src/zcl_mdmdo
 в `ZCL_MDMDOC_MDG_READER` + BAdI-классе (помечены verify-on-system, вне abaplint).
 Внедрение — **глава 10 в [docs/INTEGRATION.md](docs/INTEGRATION.md)**.
 
+**Адаптивность и пред-запусковые тесты.** Маппинг полей MDG не захардкожен: `ZMDMDOC_MDG_DISCOVER`
+читает реальную модель и предлагает соответствие `SAP_KEY→сущность.поле` (таблица `ZMDMDOC_MAP`,
+иначе дефолты). `ZMDMDOC_DOCTOR` — набор маленьких проверок «загрузится / прочитает данные»
+(ядро — тестируемый `ZCL_MDMDOC_SELFTEST`) перед включением BAdI. Разделы 11–12 в INTEGRATION.md.
+
 ## Что НЕ переносилось из оригинала
 
 Веб-панель/REST API, teach loop (review → labels → few-shot → LoRA → adoption gate),
