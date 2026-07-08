@@ -42,6 +42,7 @@ CLASS ltcl_rules DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL
     METHODS pred_iban_bad_length     FOR TESTING.
     METHODS pred_iban_checksum_fail  FOR TESTING.
     METHODS pred_iban_ok             FOR TESTING.
+    METHODS pred_iban_numeric_us_ok  FOR TESTING.
     METHODS pred_ein_shape           FOR TESTING.
     METHODS pred_tin_vs_class_llc    FOR TESTING.
     METHODS pred_individual_ein_biz  FOR TESTING.
@@ -310,6 +311,22 @@ CLASS ltcl_rules IMPLEMENTATION.
     cl_abap_unit_assert=>assert_false(
       act = has_rule( it_findings = lt iv_id = `BNK-011` )
       msg = 'valid IBAN must not fire BNK-011' ).
+  ENDMETHOD.
+
+
+  METHOD pred_iban_numeric_us_ok.
+    " US doc: a purely numeric value in the iban field is a plain account
+    " number (no IBAN in the US) — a NORMAL format that must NOT fire BNK-011.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `bank` iv_type = `bank_letter`
+           it_fields = VALUE #( ( f( iv_name = `iban` iv_value = `4428793322` ) )
+                                ( f( iv_name = `bank_country` iv_value = `United States` ) )
+                                ( f( iv_name = `signed` iv_value = `true` ) )
+                                ( f( iv_name = `account_holder` iv_value = `Acme` ) )
+                                ( f( iv_name = `bank_name` iv_value = `Intrust Bank` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt iv_id = `BNK-011` )
+      msg = 'numeric account number in the IBAN field (US) must not fire BNK-011' ).
   ENDMETHOD.
 
 

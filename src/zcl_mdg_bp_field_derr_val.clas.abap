@@ -114,7 +114,9 @@ CLASS zcl_mdg_bp_field_derr_val IMPLEMENTATION.
       iv_doc_type   = lv_type
       it_llm_fields = VALUE #( )
       it_candidates = lt_cand
-      iv_llm_used   = abap_false ).
+      iv_llm_used   = abap_false
+      iv_raw_text   = lv_text
+      iv_filename   = CONV string( is_doc-name ) ).
   ENDMETHOD.
 
   METHOD emit_finding.

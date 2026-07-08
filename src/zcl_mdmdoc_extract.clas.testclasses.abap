@@ -45,6 +45,15 @@ CLASS ltcl_extract DEFINITION FINAL FOR TESTING
     " secrets + passthrough
     METHODS secrets_registered   FOR TESTING.
     METHODS doctype_override     FOR TESTING.
+
+    " audit guards (Python stage_b ports — PARITY.md GUARDS)
+    METHODS guard_numeric_iban_moved  FOR TESTING.
+    METHODS guard_iban_repair         FOR TESTING.
+    METHODS guard_abi_cab_note        FOR TESTING.
+    METHODS guard_docusign_signed     FOR TESTING.
+    METHODS guard_stmt_period         FOR TESTING.
+    METHODS guard_regulator_noise     FOR TESTING.
+    METHODS guard_jp_postal_rescue    FOR TESTING.
 ENDCLASS.
 
 
@@ -300,6 +309,161 @@ CLASS ltcl_extract IMPLEMENTATION.
     cl_abap_unit_assert=>assert_subrc( act = sy-subrc exp = 4 msg = `_model not a field` ).
     READ TABLE ls-fields TRANSPORTING NO FIELDS WITH KEY name = `doc_type`.
     cl_abap_unit_assert=>assert_subrc( act = sy-subrc exp = 4 msg = `doc_type not a field` ).
+  ENDMETHOD.
+
+
+  METHOD guard_numeric_iban_moved.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    " US doc: a plain account number printed under an 'IBAN account no.' label
+    INSERT fld( iv_name = `iban` iv_value = `4428793322` ) INTO TABLE lt_llm.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `Account details for wires` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `iban` ) exp = ``
+      msg = `numeric iban field must be cleared` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `account_number` ) exp = `4428793322`
+      msg = `numeric value relocated to account_number` ).
+    cl_abap_unit_assert=>assert_true(
+      act = any_note_contains( is_ext = ls iv_sub = `moved to account number` )
+      msg = `relocation note present` ).
+  ENDMETHOD.
+
+
+  METHOD guard_iban_repair.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    " model garbled the last digit; the DOCUMENT text holds the valid print
+    INSERT fld( iv_name = `iban` iv_value = `DE89370400440532013001` ) INTO TABLE lt_llm.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `IBAN: DE89 3704 0044 0532 0130 00, BIC: COBADEFF` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `iban` ) exp = c_iban
+      msg = `iban repaired from the raw text` ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_note( is_ext = ls
+                      iv_sub = `iban repaired from the document text (model read failed the mod-97 checksum)` )
+      msg = `repair note present` ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_note( is_ext = ls iv_sub = `iban checksum (ISO 13616 mod-97): valid` )
+      msg = `checksum stated out loud` ).
+  ENDMETHOD.
+
+
+  METHOD guard_abi_cab_note.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    " Italian letter: ABI landed in the ABA field; IT IBAN carries ABI/CAB
+    INSERT fld( iv_name = `iban` iv_value = `IT60X0542811101000000123456` ) INTO TABLE lt_llm.
+    INSERT fld( iv_name = `routing_aba` iv_value = `05428` ) INTO TABLE lt_llm.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `routing_aba` ) exp = ``
+      msg = `non-ABA code removed from the routing field` ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_note( is_ext = ls
+                      iv_sub = `domestic bank codes 05428 (ABI/CAB, not ABA): match the IBAN structure` )
+      msg = `ABI/CAB structure note present` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `branch_code` ) exp = `11101`
+      msg = `CAB doubles as branch_code` ).
+  ENDMETHOD.
+
+
+  METHOD guard_docusign_signed.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `DocuSign Envelope ID: 5F2A. Signed 2024-05-03 | 10:22 PDT` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `signed` ) exp = `true`
+      msg = `e-signature envelope counts as signed` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_date` ) exp = `2024-05-03`
+      msg = `signing timestamp becomes doc_date` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `signature_evidence` )
+      exp = `electronically signed (DocuSign/e-signature envelope present)`
+      msg = `evidence text set` ).
+  ENDMETHOD.
+
+
+  METHOD guard_stmt_period.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_statement`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `Statement period 1 Jan 2025 to 31 Mar 2025` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_date` ) exp = `1 Jan 2025 to 31 Mar 2025`
+      msg = `statement period rescued as doc_date` ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_note( is_ext = ls iv_sub = `document date = statement period` )
+      msg = `period note present` ).
+  ENDMETHOD.
+
+
+  METHOD guard_regulator_noise.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    INSERT fld( iv_name = `bank_name`
+                iv_value = `VIGILADO Superintendencia Financiera de Colombia` ) INTO TABLE lt_llm.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `bank_name` ) exp = ``
+      msg = `regulator watermark dropped from bank_name` ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lines( ls-warnings ) > 0 )
+      msg = `watermark warning emitted` ).
+  ENDMETHOD.
+
+
+  METHOD guard_jp_postal_rescue.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    " model read the postal code as the account; the labeled field is right
+    INSERT fld( iv_name = `account_number` iv_value = `8130044` ) INTO TABLE lt_llm.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `〒813-0044 福岡市東区 口座番号 1234567` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `account_number` ) exp = `1234567`
+      msg = `postal code dropped, labeled account rescued` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `bank_country` ) exp = `JP`
+      msg = `JP inferred from domestic form markers` ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lines( ls-warnings ) > 0 )
+      msg = `postal-code warning emitted` ).
   ENDMETHOD.
 
 ENDCLASS.

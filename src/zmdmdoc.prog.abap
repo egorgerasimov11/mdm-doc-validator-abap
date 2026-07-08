@@ -142,7 +142,8 @@ FORM main.
   " 8. merge (regex overrides model) + normalize
   DATA(ls_ext) = zcl_mdmdoc_extract=>build(
     iv_doc_class = lv_class iv_doc_type = lv_type
-    it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = lv_llm_used ).
+    it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = lv_llm_used
+    iv_raw_text = lv_text iv_filename = p_file ).
 
   " 9. rules (optional JSON override) + pipeline findings before the verdict
   DATA lv_rules_json TYPE string.

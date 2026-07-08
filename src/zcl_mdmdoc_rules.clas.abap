@@ -639,6 +639,14 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
     " shape ^[A-Z]{2}\d{2}[A-Z0-9]+$
     IF regex_matches_start( iv_pattern = `^[A-Z]{2}\d{2}[A-Z0-9]+$`
                             iv_text = lv_iban ) = abap_false.
+      " A purely numeric value is a plain account number — the US and other
+      " non-IBAN countries have no IBAN, so a domestic/international account
+      " number in this field is a NORMAL format, not a malformed IBAN.
+      " (The extract guard already relocates it to account_number; this is defence.)
+      IF lv_iban CO `0123456789`.
+        ev_fired = abap_false.
+        RETURN.
+      ENDIF.
       ev_fired  = abap_true.
       ev_detail = `non-standard shape (may be a plain account number in the IBAN field)`.
       RETURN.
