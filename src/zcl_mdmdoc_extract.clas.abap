@@ -690,10 +690,10 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
 
       DATA(lv_note) = ``.
       IF lv_mv IS INITIAL.
-        " blank model field + candidate -> fill from regex
+        " blank model field + candidate -> fill from OCR regex
         set_field( EXPORTING iv_name = lv_k iv_value = lv_dv
                    CHANGING  ct_fields = cs_ext-fields ).
-        lv_note = |{ lv_k }=filled-from-regex({ masked( iv_field = lv_k iv_value = lv_dv ) })|.
+        lv_note = |{ lv_k }=filled-from-OCR({ masked( iv_field = lv_k iv_value = lv_dv ) })|.
         APPEND lv_note TO cs_ext-crosscheck.
 
       ELSEIF zcl_mdmdoc_norm=>norm_id( lv_mv ) = zcl_mdmdoc_norm=>norm_id( lv_dv ).
@@ -710,14 +710,16 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
         APPEND lv_note TO cs_ext-crosscheck.
 
       ELSE.
-        " different -> candidate (regex) WINS + mismatch note + warning line
+        " different -> MISMATCH note, model value KEPT (Python semantics,
+        " fields.crosscheck_ids: uncertainty is metadata — the doubt drives
+        " escalation/confidence in the full product; golden case
+        " iban-model-vs-ocr-mismatch pins this cross-implementation).
         DATA(lv_masked_m) = masked( iv_field = lv_k iv_value = lv_mv ).
         DATA(lv_masked_d) = masked( iv_field = lv_k iv_value = lv_dv ).
-        set_field( EXPORTING iv_name = lv_k iv_value = lv_dv
-                   CHANGING  ct_fields = cs_ext-fields ).
-        lv_note = |{ lv_k }=MISMATCH(model={ lv_masked_m } vs regex={ lv_masked_d })|.
+        lv_note = |{ lv_k }=MISMATCH(model={ lv_masked_m } vs ocr={ lv_masked_d })|.
         APPEND lv_note TO cs_ext-crosscheck.
-        APPEND |{ lv_k }: regex overrode model read ({ lv_note })| TO cs_ext-warnings.
+        APPEND |{ lv_k }: OCR regex disagrees with the model read ({ lv_note })|
+               TO cs_ext-warnings.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
@@ -733,7 +735,7 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       IF lv_tin IS INITIAL.
         set_field( EXPORTING iv_name = `tin_raw` iv_value = lv_ein
                    CHANGING  ct_fields = cs_ext-fields ).
-        APPEND |tin=filled-from-regex({ zcl_mdmdoc_mask=>mask( iv_kind = zif_mdmdoc_types=>c_kind-ein iv_value = lv_ein ) })|
+        APPEND |tin=filled-from-OCR({ zcl_mdmdoc_mask=>mask( iv_kind = zif_mdmdoc_types=>c_kind-ein iv_value = lv_ein ) })|
                TO cs_ext-crosscheck.
         lv_tin = lv_ein.
       ENDIF.
@@ -754,7 +756,7 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
           iv_kind = zif_mdmdoc_types=>c_kind-tin iv_value = lv_tin ).
         DATA(lv_mm_d) = zcl_mdmdoc_mask=>mask(
           iv_kind = zif_mdmdoc_types=>c_kind-ein iv_value = lv_ein ).
-        APPEND |tin_raw=MISMATCH(model={ lv_mm_m } vs regex={ lv_mm_d })|
+        APPEND |tin_raw=MISMATCH(model={ lv_mm_m } vs ocr={ lv_mm_d })|
                TO cs_ext-crosscheck.
       ENDIF.
     ENDIF.

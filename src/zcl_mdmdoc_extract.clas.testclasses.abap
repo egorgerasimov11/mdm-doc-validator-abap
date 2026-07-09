@@ -105,7 +105,7 @@ CLASS ltcl_extract IMPLEMENTATION.
       act = field_of( is_ext = ls iv_name = `iban` ) exp = c_iban
       msg = `blank iban filled from regex` ).
     cl_abap_unit_assert=>assert_true(
-      act = any_note_contains( is_ext = ls iv_sub = `iban=filled-from-regex(` )
+      act = any_note_contains( is_ext = ls iv_sub = `iban=filled-from-OCR(` )
       msg = `fill note present` ).
   ENDMETHOD.
 
@@ -159,7 +159,9 @@ CLASS ltcl_extract IMPLEMENTATION.
   METHOD iban_mismatch_wins.
     DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
     DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
-    " model read a DIFFERENT (garbled) IBAN; regex candidate is the truth
+    " model read a DIFFERENT (garbled) IBAN; regex candidate disagrees.
+    " Python semantics (golden-aligned): the model value is KEPT, the
+    " disagreement is a MISMATCH note + warning — uncertainty is metadata.
     INSERT fld( iv_name = `iban` iv_value = `DE00000000000000000000` ) INTO TABLE lt_llm.
     INSERT fld( iv_name = `iban` iv_value = c_iban ) INTO TABLE lt_cand.
 
@@ -167,13 +169,16 @@ CLASS ltcl_extract IMPLEMENTATION.
       iv_doc_class = `bank` iv_doc_type = `bank_letter`
       it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true ).
 
-    " regex WINS
+    " model value KEPT (mirror of fields.crosscheck_ids)
     cl_abap_unit_assert=>assert_equals(
-      act = field_of( is_ext = ls iv_name = `iban` ) exp = c_iban
-      msg = `regex overrode model on mismatch` ).
+      act = field_of( is_ext = ls iv_name = `iban` ) exp = `DE00000000000000000000`
+      msg = `model value kept on mismatch (Python semantics)` ).
     cl_abap_unit_assert=>assert_true(
       act = any_note_contains( is_ext = ls iv_sub = `iban=MISMATCH(model=` )
       msg = `mismatch note present` ).
+    cl_abap_unit_assert=>assert_true(
+      act = any_note_contains( is_ext = ls iv_sub = ` vs ocr=` )
+      msg = `mismatch note names the ocr side` ).
     " a warning line was emitted
     cl_abap_unit_assert=>assert_true(
       act = boolc( lines( ls-warnings ) > 0 )
