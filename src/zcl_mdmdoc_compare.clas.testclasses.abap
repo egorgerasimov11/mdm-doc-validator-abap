@@ -24,6 +24,8 @@ CLASS ltcl_compare DEFINITION FINAL FOR TESTING
     METHODS iban_one_side    FOR TESTING.
     METHODS account_zeros    FOR TESTING.
     METHODS account_in_iban  FOR TESTING.
+    METHODS account_tail_decomposed FOR TESTING.
+    METHODS account_midstring_no_match FOR TESTING.
     METHODS account_mismatch FOR TESTING.
     METHODS swift_xxx        FOR TESTING.
     METHODS swift_mismatch   FOR TESTING.
@@ -107,13 +109,40 @@ CLASS ltcl_compare IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD account_in_iban.
+    " C9: doc matches the SAP IBAN tail but SAP's stored BANKN is NOT
+    " consistent with its own IBAN -> SAP-009 WARNING, not a silent match.
     zcl_mdmdoc_compare=>compare(
       EXPORTING is_ext = ext( VALUE #( ( `account_number=5407324931` ) ) )
                 it_sap = saptab( VALUE #( ( `bank_account=99999999` )
                                           ( `iban=DE44500105175407324931` ) ) )
       IMPORTING et_findings = DATA(lt_find) et_rows = DATA(lt_rows) ).
-    cl_abap_unit_assert=>assert_equals( act = row_status( it_rows = lt_rows iv_field = 'Bank Account' ) exp = 'match' ).
+    cl_abap_unit_assert=>assert_equals( act = row_status( it_rows = lt_rows iv_field = 'Bank Account' ) exp = 'MISMATCH' ).
+    cl_abap_unit_assert=>assert_true( has_finding( it_find = lt_find iv_id = 'SAP-009' ) ).
     cl_abap_unit_assert=>assert_false( has_finding( it_find = lt_find iv_id = 'SAP-003' ) ).
+  ENDMETHOD.
+
+  METHOD account_tail_decomposed.
+    " doc account and SAP BANKN both anchor the same IBAN tail (branch-code
+    " prefix differs) -> consistent decomposition, match, no finding
+    zcl_mdmdoc_compare=>compare(
+      EXPORTING is_ext = ext( VALUE #( ( `account_number=40378412` ) ) )
+                it_sap = saptab( VALUE #( ( `bank_account=01671000040378412` )
+                                          ( `iban=IT39T0200801671000040378412` ) ) )
+      IMPORTING et_findings = DATA(lt_find) et_rows = DATA(lt_rows) ).
+    cl_abap_unit_assert=>assert_equals( act = row_status( it_rows = lt_rows iv_field = 'Bank Account' ) exp = 'match' ).
+    cl_abap_unit_assert=>assert_false( has_finding( it_find = lt_find iv_id = 'SAP-009' ) ).
+    cl_abap_unit_assert=>assert_false( has_finding( it_find = lt_find iv_id = 'SAP-003' ) ).
+  ENDMETHOD.
+
+  METHOD account_midstring_no_match.
+    " mid-string containment (not the tail) must fall through to SAP-003
+    zcl_mdmdoc_compare=>compare(
+      EXPORTING is_ext = ext( VALUE #( ( `account_number=123456` ) ) )
+                it_sap = saptab( VALUE #( ( `bank_account=999999` )
+                                          ( `iban=DE44500105123456777918` ) ) )
+      IMPORTING et_findings = DATA(lt_find) et_rows = DATA(lt_rows) ).
+    cl_abap_unit_assert=>assert_equals( act = row_status( it_rows = lt_rows iv_field = 'Bank Account' ) exp = 'MISMATCH' ).
+    cl_abap_unit_assert=>assert_true( has_finding( it_find = lt_find iv_id = 'SAP-003' ) ).
   ENDMETHOD.
 
   METHOD account_mismatch.

@@ -274,19 +274,53 @@ CLASS zcl_mdmdoc_compare IMPLEMENTATION.
         add_row( EXPORTING iv_field = lv_field iv_doc = lv_dd iv_sap = lv_sd
                            iv_status = zif_mdmdoc_types=>c_cmp_status-match
                            iv_note = `leading zeros differ (SAP padding)` CHANGING ct_rows = ct_rows ).
-      ELSEIF lv_iban IS NOT INITIAL AND lv_d IS NOT INITIAL AND lv_iban CS lv_d.
-        add_row( EXPORTING iv_field = lv_field iv_doc = lv_dd iv_sap = lv_sd
-                           iv_status = zif_mdmdoc_types=>c_cmp_status-match
-                           iv_note = `document account contained in SAP IBAN` CHANGING ct_rows = ct_rows ).
       ELSE.
-        DATA(lv_pos) = first_diff( iv_a = lv_dz iv_b = lv_sz ).
-        add_row( EXPORTING iv_field = lv_field iv_doc = lv_dd iv_sap = lv_sd
-                           iv_status = zif_mdmdoc_types=>c_cmp_status-mismatch
-                           iv_note = |differs from position { lv_pos }| CHANGING ct_rows = ct_rows ).
-        finding( EXPORTING iv_id = 'SAP-003' iv_sev = zif_mdmdoc_types=>c_severity-critical
-                           iv_effect = zif_mdmdoc_types=>c_verdict-review iv_field = 'account_number'
-                           iv_msg = |Account number mismatch: document { lv_dd } vs SAP { lv_sd }. Do not process.|
-                 CHANGING ct_find = ct_find ).
+        " Anchored to the IBAN's ACCOUNT TAIL (>=6 significant digits) — the
+        " old unanchored CS declared "match" and silenced SAP-003 (audit C9).
+        DATA(lv_tail_ok) = abap_false.
+        DATA(lv_len_i) = strlen( lv_iban ).
+        DATA(lv_len_d) = strlen( lv_dz ).
+        IF lv_iban IS NOT INITIAL AND lv_dz IS NOT INITIAL
+           AND lv_len_d >= 6 AND lv_len_i >= lv_len_d
+           AND substring( val = lv_iban off = lv_len_i - lv_len_d len = lv_len_d ) = lv_dz.
+          lv_tail_ok = abap_true.
+        ENDIF.
+        IF lv_tail_ok = abap_true.
+          " is SAP's own BANKN consistent with its IBAN tail too?
+          DATA(lv_s_ok) = abap_false.
+          DATA(lv_len_s) = strlen( lv_sz ).
+          IF lv_sz IS NOT INITIAL AND lv_len_i >= lv_len_s
+             AND substring( val = lv_iban off = lv_len_i - lv_len_s len = lv_len_s ) = lv_sz.
+            lv_s_ok = abap_true.
+          ENDIF.
+          IF lv_s_ok = abap_true.
+            DATA(lv_note_ok) = `document account matches the SAP IBAN account tail ` &&
+              `(SAP stores a different decomposition of the same account)`.
+            add_row( EXPORTING iv_field = lv_field iv_doc = lv_dd iv_sap = lv_sd
+                               iv_status = zif_mdmdoc_types=>c_cmp_status-match
+                               iv_note = lv_note_ok CHANGING ct_rows = ct_rows ).
+          ELSE.
+            add_row( EXPORTING iv_field = lv_field iv_doc = lv_dd iv_sap = lv_sd
+                               iv_status = zif_mdmdoc_types=>c_cmp_status-mismatch
+                               iv_note = `document matches the SAP IBAN tail but SAP's stored account number differs`
+                     CHANGING ct_rows = ct_rows ).
+            DATA(lv_msg9) = `Document account matches the SAP IBAN account tail, but SAP's stored ` &&
+              `bank account (BANKN) differs - verify the decomposition before processing.`.
+            finding( EXPORTING iv_id = 'SAP-009' iv_sev = zif_mdmdoc_types=>c_severity-warning
+                               iv_effect = zif_mdmdoc_types=>c_verdict-warning iv_field = 'account_number'
+                               iv_msg = lv_msg9
+                     CHANGING ct_find = ct_find ).
+          ENDIF.
+        ELSE.
+          DATA(lv_pos) = first_diff( iv_a = lv_dz iv_b = lv_sz ).
+          add_row( EXPORTING iv_field = lv_field iv_doc = lv_dd iv_sap = lv_sd
+                             iv_status = zif_mdmdoc_types=>c_cmp_status-mismatch
+                             iv_note = |differs from position { lv_pos }| CHANGING ct_rows = ct_rows ).
+          finding( EXPORTING iv_id = 'SAP-003' iv_sev = zif_mdmdoc_types=>c_severity-critical
+                             iv_effect = zif_mdmdoc_types=>c_verdict-review iv_field = 'account_number'
+                             iv_msg = |Account number mismatch: document { lv_dd } vs SAP { lv_sd }. Do not process.|
+                   CHANGING ct_find = ct_find ).
+        ENDIF.
       ENDIF.
     ELSEIF lv_d IS NOT INITIAL OR lv_s IS NOT INITIAL.
       add_row( EXPORTING iv_field = lv_field iv_doc = lv_dd iv_sap = lv_sd
