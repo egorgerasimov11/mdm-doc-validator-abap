@@ -76,6 +76,10 @@ CLASS zcl_mdmdoc_extract DEFINITION
     CLASS-METHODS drop_regulator_noise
       CHANGING  cs_ext TYPE zif_mdmdoc_types=>ty_extraction.
 
+    CLASS-METHODS ground_payment_instructions
+      IMPORTING iv_raw_text TYPE string
+      CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
+
     CLASS-METHODS drop_filename_echo
       IMPORTING iv_filename TYPE string
                 iv_raw_text TYPE string
@@ -127,6 +131,8 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
 
     " echo/noise guards BEFORE the ID crosscheck (Python stage_b order: a
     " dropped echo/date-shaped TIN leaves a gap the detectors then refill)
+    ground_payment_instructions( EXPORTING iv_raw_text = iv_raw_text
+                                 CHANGING  cs_ext = rs_ext ).
     drop_filename_echo( EXPORTING iv_filename = iv_filename
                                   iv_raw_text = iv_raw_text
                         CHANGING  cs_ext = rs_ext ).
@@ -524,6 +530,26 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       set_field( EXPORTING iv_name = `bank_name` iv_value = ``
                  CHANGING  ct_fields = cs_ext-fields ).
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD ground_payment_instructions.
+    " [GUARD:ground_payment_instructions] mirror of Python
+    " stage_b._ground_payment_instructions: a payment_instructions type must be
+    " grounded in a deterministic marker; an ungrounded model guess falls back
+    " to 'other' (in ABAP the deterministic hint wins over the LLM by
+    " construction, so a surviving ungrounded type can only be an LLM read).
+    IF cs_ext-doc_class <> zif_mdmdoc_types=>c_doc_class-bank
+       OR cs_ext-doc_type <> `payment_instructions`.
+      RETURN.
+    ENDIF.
+    IF zcl_mdmdoc_sniff=>payment_instruction_marks( iv_raw_text ) = abap_true.
+      RETURN.
+    ENDIF.
+    APPEND `model classified payment_instructions but the document carries no `
+        && `payment-instruction markers — classified as other`
+        TO cs_ext-warnings.
+    cs_ext-doc_type = `other`.
   ENDMETHOD.
 
 

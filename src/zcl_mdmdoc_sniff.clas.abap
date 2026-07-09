@@ -23,6 +23,7 @@ CLASS zcl_mdmdoc_sniff DEFINITION
     CLASS-DATA gt_image_exts    TYPE string_table.
     CLASS-DATA gt_w9_sniff      TYPE string_table.
     CLASS-DATA gt_invoice_marks TYPE string_table.
+    CLASS-DATA gt_payment_marks TYPE string_table.
     CLASS-DATA gt_remit_context TYPE string_table.
 
     CLASS-METHODS class_constructor.
@@ -36,6 +37,12 @@ CLASS zcl_mdmdoc_sniff DEFINITION
       IMPORTING it_table       TYPE string_table
                 iv_value       TYPE string
       RETURNING VALUE(rv_found) TYPE abap_bool.
+
+    " fields.payment_instruction_marks: deterministic payment-instructions
+    " evidence (incl. bank-issued settlement variants) — grounds BNK-004
+    CLASS-METHODS payment_instruction_marks
+      IMPORTING iv_text       TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
 
     " fields.invoice_marks: count invoice marks on lines OUTSIDE remit context
     CLASS-METHODS invoice_marks
@@ -89,7 +96,17 @@ CLASS zcl_mdmdoc_sniff IMPLEMENTATION.
       ( `amount due` ) ( `subtotal` ) ( `payment terms` )
       ( `purchase order number` ) ( `pro forma` )
       ( `rechnungsnummer` ) ( `rechnungsdatum` )
-      ( `numero fattura` ) ( `número de factura` ) ).
+      ( `numero fattura` ) ( `número de factura` )
+      " CJK entries are FIELD LABELS — bare 发票 ('will issue an invoice') is
+      " not invoice evidence (real case: conference-exhibition notice)
+      ( `发票号码` ) ( `發票號碼` ) ( `发票日期` ) ( `發票日期` ) ).
+    " fields._PAYMENT_INSTRUCTION_MARKS
+    gt_payment_marks = VALUE #(
+      ( `payment instruction` ) ( `ach payments only` ) ( `for ach payments` )
+      ( `remittance advice` ) ( `remittance sent` ) ( `email remittance` )
+      ( `banking details are confidential` ) ( `ach payment type` )
+      ( `standard settlement instructions` ) ( `settlement instructions` )
+      ( `for ach delivery` ) ( `for wire transfers` ) ( `wire instructions` ) ).
     " fields._REMIT_CONTEXT
     gt_remit_context = VALUE #(
       ( `remit` ) ( `being paid` ) ( `must include` )
@@ -340,22 +357,38 @@ CLASS zcl_mdmdoc_sniff IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " a supplier introducing ITSELF (letterhead info sheet addressed to its
+    " vendors/customers, with its own bank block) — checked BEFORE ap_document
+    IF ( blob CS `dear vendor` OR blob CS `dear customer` ) AND blob CS `bank`.
+      rv_type = `supplier_letterhead`.
+      RETURN.
+    ENDIF.
+
+    " AP-form needs the SAP-registration marker; a DocuSign mention alone is a
+    " signature vehicle, not AP-form evidence
     IF blob CS `bank account information`
-       AND ( blob CS `docusign` OR blob CS `for sap` OR blob CS `s/4hana` ).
+       AND ( blob CS `for sap` OR blob CS `s/4hana` OR blob CS `sap registration` ).
       rv_type = `ap_document`.
       RETURN.
     ENDIF.
 
-    IF blob CS `payment instruction` OR blob CS `ach payments only`
-       OR blob CS `for ach payments` OR blob CS `remittance advice`
-       OR blob CS `remittance sent` OR blob CS `email remittance`
-       OR blob CS `banking details are confidential`
-       OR blob CS `ach payment type`.
+    IF payment_instruction_marks( blob ) = abap_true.
       rv_type = `payment_instructions`.
       RETURN.
     ENDIF.
 
     rv_type = ``.
+  ENDMETHOD.
+
+
+  METHOD payment_instruction_marks.
+    DATA(lv_low) = to_lower( iv_text ).
+    LOOP AT gt_payment_marks INTO DATA(lv_m).
+      IF lv_low CS lv_m.
+        rv_yes = abap_true.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
 ENDCLASS.
