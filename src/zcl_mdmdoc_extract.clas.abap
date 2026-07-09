@@ -741,6 +741,17 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
         ENDIF.
         set_field( EXPORTING iv_name = `tin_type` iv_value = `EIN`
                    CHANGING  ct_fields = cs_ext-fields ).
+      ELSE.
+        " mirror of Python fields.crosscheck_ids W-9 mismatch branch (audit
+        " wave C5): the anchored EIN disagrees with the model TIN. Do NOT
+        " settle tin_type from a contested read; the `tin_raw=...MISMATCH`
+        " note shape is the cross-implementation hard-doubt marker.
+        DATA(lv_mm_m) = zcl_mdmdoc_mask=>mask(
+          iv_kind = zif_mdmdoc_types=>c_kind-tin iv_value = lv_tin ).
+        DATA(lv_mm_d) = zcl_mdmdoc_mask=>mask(
+          iv_kind = zif_mdmdoc_types=>c_kind-ein iv_value = lv_ein ).
+        APPEND |tin_raw=MISMATCH(model={ lv_mm_m } vs regex={ lv_mm_d })|
+               TO cs_ext-crosscheck.
       ENDIF.
     ENDIF.
 
@@ -759,16 +770,35 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       ENDIF.
       DATA(lv_boxed_type) = zcl_mdmdoc_norm=>field_value(
         it_fields = it_candidates iv_name = `tin_boxed_type` ).
-      IF lv_boxed_type IS NOT INITIAL
-         AND zcl_mdmdoc_norm=>norm_id( lv_tin2 ) = zcl_mdmdoc_norm=>norm_id( lv_boxed ).
-        DATA(lv_tt2) = to_upper( zcl_mdmdoc_norm=>field_value(
-          it_fields = cs_ext-fields iv_name = `tin_type` ) ).
-        IF lv_tt2 <> to_upper( lv_boxed_type ).
-          APPEND |tin_type={ lv_boxed_type } (settled by the { lv_boxed_type } box label)|
+      IF zcl_mdmdoc_norm=>norm_id( lv_tin2 ) = zcl_mdmdoc_norm=>norm_id( lv_boxed ).
+        IF lv_boxed_type IS NOT INITIAL.
+          DATA(lv_tt2) = to_upper( zcl_mdmdoc_norm=>field_value(
+            it_fields = cs_ext-fields iv_name = `tin_type` ) ).
+          IF lv_tt2 <> to_upper( lv_boxed_type ).
+            APPEND |tin_type={ lv_boxed_type } (settled by the { lv_boxed_type } box label)|
+                   TO cs_ext-crosscheck.
+          ENDIF.
+          set_field( EXPORTING iv_name = `tin_type` iv_value = lv_boxed_type
+                     CHANGING  ct_fields = cs_ext-fields ).
+        ENDIF.
+      ELSE.
+        " boxed digits disagree with the model TIN — one hard note is enough
+        " (the EIN detector usually sees the same digits). Mirror of C5.
+        DATA lv_has_mm TYPE abap_bool VALUE abap_false.
+        LOOP AT cs_ext-crosscheck INTO DATA(lv_cc).
+          IF lv_cc CP `tin_raw=MISMATCH*`.
+            lv_has_mm = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+        IF lv_has_mm = abap_false.
+          DATA(lv_bx_m) = zcl_mdmdoc_mask=>mask(
+            iv_kind = zif_mdmdoc_types=>c_kind-tin iv_value = lv_tin2 ).
+          DATA(lv_bx_d) = zcl_mdmdoc_mask=>mask(
+            iv_kind = zif_mdmdoc_types=>c_kind-tin iv_value = lv_boxed ).
+          APPEND |tin_raw=MISMATCH(model={ lv_bx_m } vs boxed={ lv_bx_d })|
                  TO cs_ext-crosscheck.
         ENDIF.
-        set_field( EXPORTING iv_name = `tin_type` iv_value = lv_boxed_type
-                   CHANGING  ct_fields = cs_ext-fields ).
       ENDIF.
     ENDIF.
   ENDMETHOD.

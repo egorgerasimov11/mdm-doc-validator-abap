@@ -36,6 +36,7 @@ CLASS ltcl_extract DEFINITION FINAL FOR TESTING
 
     " w9 overlay
     METHODS ein_settles_tin      FOR TESTING.
+    METHODS tin_mismatch_hard_note FOR TESTING.
     METHODS boxed_tin_fill       FOR TESTING.
 
     " normalization
@@ -215,6 +216,37 @@ CLASS ltcl_extract IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = has_note( is_ext = ls iv_sub = `tin_type=EIN (settled by the EIN detector)` )
       msg = `settle note present` ).
+  ENDMETHOD.
+
+  METHOD tin_mismatch_hard_note.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    " model TIN disagrees with the anchored EIN detector (audit-wave C5):
+    " a hard-masked MISMATCH note; tin_type must NOT be settled.
+    INSERT fld( iv_name = `tin_raw`  iv_value = `12-3456789` ) INTO TABLE lt_llm.
+    INSERT fld( iv_name = `tin_type` iv_value = `SSN` )        INTO TABLE lt_llm.
+    INSERT fld( iv_name = `ein` iv_value = `98-7654321` )      INTO TABLE lt_cand.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `w9` iv_doc_type = `w9`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true ).
+
+    DATA lv_found TYPE abap_bool VALUE abap_false.
+    LOOP AT ls-crosscheck INTO DATA(lv_note).
+      IF lv_note CP `tin_raw=MISMATCH*`.
+        lv_found = abap_true.
+      ENDIF.
+      " hard-masked: neither full TIN appears in any crosscheck note
+      cl_abap_unit_assert=>assert_false(
+        act = boolc( lv_note CS `123456789` OR lv_note CS `987654321` )
+        msg = `TIN digits must be masked in notes` ).
+    ENDLOOP.
+    cl_abap_unit_assert=>assert_true(
+      act = lv_found
+      msg = `contested TIN must leave a MISMATCH note` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `tin_type` ) exp = `SSN`
+      msg = `a contested read settles nothing` ).
   ENDMETHOD.
 
   METHOD boxed_tin_fill.
