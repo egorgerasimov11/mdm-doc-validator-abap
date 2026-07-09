@@ -318,7 +318,11 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
          AND iv_raw_text CS lv_stripped.
         set_field( EXPORTING iv_name = `account_number` iv_value = lv_stripped
                    CHANGING  ct_fields = cs_ext-fields ).
-        cross_note( EXPORTING iv_note = |account number: printed form { lv_stripped } (IBAN account part is the zero-padded { lv_acct })|
+        " account digits through the mask — this note used to embed the raw
+        " values (audit-wave C6 masking-discipline fix, mirrors stage_b)
+        DATA(lv_pf_m) = masked( iv_field = `account_number` iv_value = lv_stripped ).
+        DATA(lv_pf_z) = masked( iv_field = `account_number` iv_value = lv_acct ).
+        cross_note( EXPORTING iv_note = |account number: printed form { lv_pf_m } (IBAN account part is the zero-padded { lv_pf_z })|
                     CHANGING  cs_ext = cs_ext ).
       ENDIF.
     ENDIF.
