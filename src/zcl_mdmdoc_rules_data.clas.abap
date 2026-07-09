@@ -190,10 +190,12 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         name = `missing_account_holder`
         applies_to = VALUE #(
           ( `bank_letter` )
+          ( `bank_statement` )
           ( `supplier_letterhead` )
           ( `bank_screenshot` )
           ( `voided_check` )
           ( `ap_document` )
+          ( `payment_instructions` )
           ( `other` ) )
         when_op = `field_missing`
         when_field = `account_holder`
@@ -206,10 +208,12 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         name = `no_banking_identity`
         applies_to = VALUE #(
           ( `bank_letter` )
+          ( `bank_statement` )
           ( `supplier_letterhead` )
           ( `bank_screenshot` )
           ( `voided_check` )
           ( `ap_document` )
+          ( `payment_instructions` )
           ( `other` ) )
         when_op = `check`
         check_name = `no_bank_ids`
@@ -223,6 +227,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         name = `missing_bank_name`
         applies_to = VALUE #(
           ( `bank_letter` )
+          ( `bank_statement` )
           ( `bank_screenshot` )
           ( `voided_check` ) )
         when_op = `field_missing`
@@ -370,10 +375,12 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
   METHOD build_tables.
     gt_doc_types_bank = VALUE #(
       ( `bank_letter` )
+      ( `bank_statement` )
       ( `supplier_letterhead` )
       ( `bank_screenshot` )
       ( `voided_check` )
       ( `ap_document` )
+      ( `payment_instructions` )
       ( `invoice` )
       ( `email` )
       ( `editable_source` )

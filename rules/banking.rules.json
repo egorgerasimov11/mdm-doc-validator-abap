@@ -219,10 +219,12 @@
       "name": "missing_account_holder",
       "applies_to": [
         "bank_letter",
+        "bank_statement",
         "supplier_letterhead",
         "bank_screenshot",
         "voided_check",
         "ap_document",
+        "payment_instructions",
         "other"
       ],
       "severity": "WARNING",
@@ -241,10 +243,12 @@
       "name": "no_banking_identity",
       "applies_to": [
         "bank_letter",
+        "bank_statement",
         "supplier_letterhead",
         "bank_screenshot",
         "voided_check",
         "ap_document",
+        "payment_instructions",
         "other"
       ],
       "severity": "WARNING",
@@ -263,6 +267,7 @@
       "name": "missing_bank_name",
       "applies_to": [
         "bank_letter",
+        "bank_statement",
         "bank_screenshot",
         "voided_check"
       ],

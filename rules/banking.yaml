@@ -1,9 +1,14 @@
 # Banking document rules — explicit and editable. The model never decides verdicts;
 # these rules do. Sources: mdm-banking-doc-verdict + mdm-banking-checker skills.
+#
+# Governance metadata (per rule, hash-immune — never invalidates an approval):
+#   tier:   corp | experimental | learned   (only tier:corp ships to SAP v1)
+#   source: skill | policy | operator        (where the rule came from)
 version: 1
 
-doc_types: [bank_letter, supplier_letterhead, bank_screenshot, voided_check,
-            ap_document, invoice, email, editable_source, other]
+doc_types: [bank_letter, bank_statement, supplier_letterhead, bank_screenshot,
+            voided_check, ap_document, payment_instructions, invoice, email,
+            editable_source, other]
 
 tables:
   iban_length: {AD: 24, AE: 23, AT: 20, BE: 16, BG: 22, BH: 22, BR: 29, CH: 21,
@@ -17,6 +22,8 @@ tables:
 rules:
   - id: BNK-001
     name: invoice_never_bank_proof
+    tier: corp
+    source: policy
     applies_to: [invoice]
     when: {always: true}
     severity: CRITICAL
@@ -26,6 +33,8 @@ rules:
 
   - id: BNK-002
     name: email_as_proof
+    tier: experimental
+    source: policy
     applies_to: [email]
     when: {always: true}
     severity: CRITICAL
@@ -35,6 +44,8 @@ rules:
 
   - id: BNK-003
     name: editable_source
+    tier: corp
+    source: policy
     applies_to: [editable_source]
     when: {always: true}
     severity: CRITICAL
@@ -44,6 +55,8 @@ rules:
 
   - id: BNK-005
     name: ap_form_self_certified
+    tier: corp
+    source: skill
     applies_to: [ap_document]
     when: {always: true}
     severity: NOTE
@@ -53,6 +66,8 @@ rules:
 
   - id: BNK-006
     name: statement_swift_not_shown
+    tier: corp
+    source: skill
     applies_to: [bank_statement]
     when: {check: field_empty, field: swift_bic}
     severity: NOTE
@@ -62,6 +77,8 @@ rules:
 
   - id: BNK-004
     name: payment_instructions_context
+    tier: corp
+    source: skill
     applies_to: [payment_instructions]
     when: {always: true}
     severity: WARNING
@@ -71,6 +88,8 @@ rules:
 
   - id: BNK-010
     name: swift_shape
+    tier: corp
+    source: skill
     when: {check: swift_valid, field: swift_bic, args: {lengths: [8, 11]}}
     severity: CRITICAL
     verdict_effect: NEED_MANUAL_REVIEW
@@ -78,6 +97,8 @@ rules:
 
   - id: BNK-011
     name: iban_country_length
+    tier: corp
+    source: skill
     when: {check: iban_valid, field: iban, args: {table: iban_length}}
     severity: CRITICAL
     verdict_effect: NEED_MANUAL_REVIEW
@@ -85,6 +106,8 @@ rules:
 
   - id: BNK-020
     name: doc_older_than_2y
+    tier: corp
+    source: skill
     when: {check: date_older_than, field: doc_date, args: {years: 2}}
     severity: NOTE
     verdict_effect: null
@@ -92,6 +115,8 @@ rules:
 
   - id: BNK-021
     name: missing_signature_bank_letter
+    tier: corp
+    source: skill
     applies_to: [bank_letter]
     when: {check: unsigned_no_evidence, field: signed}
     severity: WARNING
@@ -101,6 +126,8 @@ rules:
 
   - id: BNK-026
     name: typed_officer_block_instead_of_signature
+    tier: corp
+    source: skill
     applies_to: [bank_letter]
     when: {check: unsigned_typed_block, field: signed}
     severity: NOTE
@@ -110,6 +137,8 @@ rules:
 
   - id: BNK-022
     name: partial_screenshot
+    tier: corp
+    source: skill
     applies_to: [bank_screenshot]
     when: {flag_true: partial_capture}
     severity: WARNING
@@ -118,7 +147,11 @@ rules:
 
   - id: BNK-023
     name: missing_account_holder
-    applies_to: [bank_letter, supplier_letterhead, bank_screenshot, voided_check, ap_document, other]
+    tier: corp
+    source: skill
+    # bank_statement/payment_instructions included since the 2026-07 audit:
+    # a holder-less statement could ACCEPT in the degraded (no-LLM) mode
+    applies_to: [bank_letter, bank_statement, supplier_letterhead, bank_screenshot, voided_check, ap_document, payment_instructions, other]
     when: {field_missing: account_holder}
     severity: WARNING
     verdict_effect: NEED_MANUAL_REVIEW
@@ -126,7 +159,9 @@ rules:
 
   - id: BNK-024
     name: no_banking_identity
-    applies_to: [bank_letter, supplier_letterhead, bank_screenshot, voided_check, ap_document, other]
+    tier: corp
+    source: skill
+    applies_to: [bank_letter, bank_statement, supplier_letterhead, bank_screenshot, voided_check, ap_document, payment_instructions, other]
     when: {check: no_bank_ids}
     severity: WARNING
     verdict_effect: NEED_MANUAL_REVIEW
@@ -134,7 +169,11 @@ rules:
 
   - id: BNK-025
     name: missing_bank_name
-    applies_to: [bank_letter, bank_screenshot, voided_check]
+    tier: corp
+    source: skill
+    # statements are bank-issued — a real one always prints the bank name
+    # (supplier-issued types stay excluded, as before)
+    applies_to: [bank_letter, bank_statement, bank_screenshot, voided_check]
     when: {field_missing: bank_name}
     severity: WARNING
     verdict_effect: WARNING
@@ -142,6 +181,8 @@ rules:
 
   - id: BNK-030
     name: unrecognized_document_type
+    tier: experimental
+    source: policy
     # An UNRECOGNIZED document (doc_type could not be established) must never
     # auto-accept, however complete its fields look — "understand what the
     # document IS" is the first check. Live case: a Chinese conference
