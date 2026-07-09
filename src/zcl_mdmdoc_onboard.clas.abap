@@ -98,7 +98,7 @@ CLASS zcl_mdmdoc_onboard IMPLEMENTATION.
 
   METHOD discover.
     DATA(lt_syn) = VALUE STANDARD TABLE OF ty_syn(
-      ( sap_key = 'account_holder' cand = 'NAME_ORG1,NAME_FIRST,NAME1,MC_NAME1' )
+      ( sap_key = 'account_holder' cand = 'NAME_ORG1,NAME_FIRST,NAME1,MC_NAME1,KOINH,ACCNAME' )
       ( sap_key = 'street'         cand = 'STREET' )
       ( sap_key = 'city'           cand = 'CITY1,ORT01' )
       ( sap_key = 'bank_country'   cand = 'BANKS' )
