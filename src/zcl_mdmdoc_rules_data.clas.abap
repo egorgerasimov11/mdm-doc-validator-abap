@@ -231,6 +231,19 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         verdict_effect = `WARNING`
         message = `Bank name not readable on the document.`
       ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-030`
+        name = `unrecognized_document_type`
+        applies_to = VALUE #(
+          ( `other` ) )
+        when_op = `always`
+        severity = `WARNING`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `Document type could not be established — an unrecognized document is never auto-accepted; ` &&
+        `review manually.`
+        message_ru = `Тип документа не установлен — неопознанный документ не принимается автоматически; проверьт` &&
+        `е вручную.`
+      ) TO gt_rules_bank.
   ENDMETHOD.
 
   METHOD build_w9.
