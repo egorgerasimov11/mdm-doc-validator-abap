@@ -543,6 +543,7 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       rv_yes = abap_false.
       RETURN.
     ENDIF.
+    " [CONST:ev_positive_phrases]
     DATA lt_ev TYPE string_table.
     lt_ev = VALUE #(
       ( `computer generated` ) ( `computer-generated` ) ( `system generated` )
@@ -581,6 +582,7 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
 
 
   METHOD p_no_bank_ids.
+    " [CONST:no_bank_ids_keys]
     DATA(lv_iban)    = field_str( it_fields = is_ext-fields iv_name = `iban` ).
     DATA(lv_acct)    = field_str( it_fields = is_ext-fields iv_name = `account_number` ).
     DATA(lv_routing) = field_str( it_fields = is_ext-fields iv_name = `routing_aba` ).
@@ -603,6 +605,7 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
 
     " lengths arg (e.g. '8,11').
     DATA lt_len TYPE STANDARD TABLE OF i WITH EMPTY KEY.
+    " [CONST:swift_lengths_default]
     DATA(lv_lengths) = arg_value( it_args = it_args iv_name = `lengths` iv_default = `8,11` ).
     SPLIT lv_lengths AT `,` INTO TABLE DATA(lt_tokens).
     LOOP AT lt_tokens ASSIGNING FIELD-SYMBOL(<t>).
@@ -624,6 +627,7 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " [CONST:bic_shape_regex]
     " BIC shape: ^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$
     IF regex_matches_start( iv_pattern = `^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$`
                             iv_text = lv_sw ) = abap_false.
@@ -654,6 +658,7 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " [CONST:iban_shape_regex]
     " shape ^[A-Z]{2}\d{2}[A-Z0-9]+$
     IF regex_matches_start( iv_pattern = `^[A-Z]{2}\d{2}[A-Z0-9]+$`
                             iv_text = lv_iban ) = abap_false.
@@ -707,6 +712,7 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
     ENDIF.
     DATA(lv_d)      = zcl_mdmdoc_norm=>digits_only( iv_value ).
     DATA(lv_digits) = strlen( lv_d ).
+    " [CONST:ein_digits_default]
     DATA(lv_want)   = CONV i( arg_value( it_args = it_args iv_name = `digits` iv_default = `9` ) ).
     IF lv_digits <> lv_want.
       ev_fired  = abap_true.
@@ -797,6 +803,7 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " [CONST:date_older_than_years_default]
     DATA(lv_years) = CONV i( arg_value( it_args = it_args iv_name = `years` iv_default = `2` ) ).
     DATA(lv_age_days) = CONV i( sy-datum - lv_date ).   " datetime.now() - dt, in days
     IF lv_age_days > lv_years * 365.

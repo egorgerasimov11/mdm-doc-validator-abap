@@ -157,6 +157,7 @@ CLASS zcl_mdmdoc_norm IMPLEMENTATION.
       ( key = `SGP` val = `SG` ) ( key = `ARE` val = `AE` )
       ( key = `AUT` val = `AT` ) ( key = `PRT` val = `PT` ) ).
 
+    " [CONST:months_abbrev_set]
     gt_months = VALUE #(
       ( name = `january` num = 1 ) ( name = `february` num = 2 )
       ( name = `march` num = 3 ) ( name = `april` num = 4 )
@@ -173,6 +174,7 @@ CLASS zcl_mdmdoc_norm IMPLEMENTATION.
       ( name = `dec` num = 12 ) ).
 
     " ES/DE month -> english lower month name (predicates._MONTHS)
+    " [CONST:months_es_de_map]
     gt_es_de = VALUE #(
       ( key = `enero` val = `january` ) ( key = `febrero` val = `february` )
       ( key = `marzo` val = `march` ) ( key = `abril` val = `april` )

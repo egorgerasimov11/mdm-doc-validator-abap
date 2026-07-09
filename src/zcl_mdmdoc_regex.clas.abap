@@ -254,6 +254,7 @@ CLASS zcl_mdmdoc_regex IMPLEMENTATION.
 
 
   METHOD extract_iban.
+    " [CONST:ocr_iban_regex]
     " IBAN_RE = \b([A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){10,30})\b   (\b -> \< \>)
     " NOTE: case-sensitive (Python IBAN_RE has no (?i)) -> upper-case letters only.
     DATA(lv_raw) = find_first(
@@ -271,6 +272,7 @@ CLASS zcl_mdmdoc_regex IMPLEMENTATION.
 
 
   METHOD extract_swift.
+    " [CONST:ocr_swift_regex]
     " prefer a BIC near a 'bic'/'swift' label (case-insensitive):
     "   (?i)(?:bic|swift)[^A-Z0-9]{0,8}([A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)
     " NOTE: the capturing group is case-sensitive in Python (only [A-Z] literal
@@ -303,6 +305,7 @@ CLASS zcl_mdmdoc_regex IMPLEMENTATION.
 
 
   METHOD extract_ein_ssn.
+    " [CONST:ocr_ein_regex] [CONST:ocr_ssn_regex]
     " EIN_RE = \b(\d{2}-\d{7})\b
     DATA(lv_ein) = find_first( iv_pattern = `\<(\d\d-\d{7})\>` iv_text = iv_flat ).
     IF lv_ein IS NOT INITIAL.
