@@ -8,6 +8,7 @@
 *&   4. optional save of the mapping to ZMDMDOC_MAP.
 *& Use this single report to verify a deployment end to end before enabling
 *& the MDG BAdI. All logic is in ZCL_MDMDOC_ONBOARD (verify-on-system).
+*& *** VERIFY ON SYSTEM *** (uses MDG types; excluded from offline abaplint).
 *&---------------------------------------------------------------------*
 REPORT zmdmdoc_setup.
 
