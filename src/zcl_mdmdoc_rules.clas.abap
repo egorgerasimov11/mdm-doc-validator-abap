@@ -232,9 +232,12 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
     lv_lang = to_upper( iv_lang ).
 
     " Remembered JSON-parse-failure engine error surfaces on every run.
+    " Fail closed: the operator's intended override did NOT run, so the
+    " verdict cannot be trusted to ACCEPT (mirror of engine.py ENGINE-GUARD).
     IF gv_engine_error = abap_true.
-      APPEND VALUE #( rule_id  = `ENGINE`
-                      severity = zif_mdmdoc_types=>c_severity-note
+      APPEND VALUE #( rule_id        = `ENGINE-GUARD`
+                      severity       = zif_mdmdoc_types=>c_severity-warning
+                      verdict_effect = zif_mdmdoc_types=>c_verdict-review
                       message  = gv_engine_msg ) TO rt_findings.
     ENDIF.
 
@@ -276,10 +279,12 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
                       ev_unknown  = lv_unknown ).
 
           IF lv_unknown = abap_true.
-            " Unknown predicate / when-op -> ENGINE finding, WARNING, no dump.
-            APPEND VALUE #( rule_id  = `ENGINE`
-                            severity = zif_mdmdoc_types=>c_severity-warning
-                            message  = |engine_error: rule { lv_rid } uses an unknown check/when-op| )
+            " Unknown predicate / when-op -> fail-closed ENGINE-GUARD (NMR):
+            " the rule could not be evaluated, so it might have been a blocker.
+            APPEND VALUE #( rule_id        = `ENGINE-GUARD`
+                            severity       = zif_mdmdoc_types=>c_severity-warning
+                            verdict_effect = zif_mdmdoc_types=>c_verdict-review
+                            message  = |engine_error: rule { lv_rid } uses an unknown check/when-op - held for manual review| )
                    TO rt_findings.
             CONTINUE.
           ENDIF.
@@ -326,6 +331,17 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
              AND lv_eff <> zif_mdmdoc_types=>c_verdict-review
              AND lv_eff <> zif_mdmdoc_types=>c_verdict-warning
              AND lv_eff <> zif_mdmdoc_types=>c_verdict-accept.
+            IF lv_eff IS NOT INITIAL.
+              " engine.py: an invalid effect must not silently drop what a
+              " human approved - fail closed to manual review.
+              DATA(lv_gmsg) = |engine_error: rule { lv_rid } declares | &&
+                |invalid verdict_effect '{ lv_eff }' - held for manual review|.
+              APPEND VALUE #( rule_id        = `ENGINE-GUARD`
+                              severity       = zif_mdmdoc_types=>c_severity-warning
+                              verdict_effect = zif_mdmdoc_types=>c_verdict-review
+                              message        = lv_gmsg )
+                     TO rt_findings.
+            ENDIF.
             CLEAR lv_eff.
           ENDIF.
 
@@ -336,10 +352,12 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
                           detail         = lv_detail
                           field          = lv_field ) TO rt_findings.
         CATCH cx_root INTO DATA(lx).
-          " engine.py: any per-rule failure -> NOTE engine_error, never crash.
-          APPEND VALUE #( rule_id  = lv_rid
-                          severity = zif_mdmdoc_types=>c_severity-note
-                          message  = |engine_error: rule { lv_rid } failed ({ lx->get_text( ) })| )
+          " engine.py: any per-rule failure -> fail-closed ENGINE-GUARD (NMR),
+          " never crash. The errored rule might have been a REJECT.
+          APPEND VALUE #( rule_id        = `ENGINE-GUARD`
+                          severity       = zif_mdmdoc_types=>c_severity-warning
+                          verdict_effect = zif_mdmdoc_types=>c_verdict-review
+                          message  = |engine_error: rule { lv_rid } failed ({ lx->get_text( ) }) - fail-closed: held for manual review| )
                  TO rt_findings.
       ENDTRY.
     ENDLOOP.

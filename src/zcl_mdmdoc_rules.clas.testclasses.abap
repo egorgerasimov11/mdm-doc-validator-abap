@@ -558,12 +558,15 @@ CLASS ltcl_rules IMPLEMENTATION.
       ext( iv_class = `bank` iv_type = `bank_letter`
            it_fields = VALUE #( ( f( iv_name = `iban` iv_value = `DE89370400440532013000` ) ) ) ) ).
     cl_abap_unit_assert=>assert_true(
-      act = has_rule( it_findings = lt iv_id = `ENGINE` )
-      msg = 'unknown predicate must yield an ENGINE finding' ).
-    DATA(ls) = find_rule( it_findings = lt iv_id = `ENGINE` ).
+      act = has_rule( it_findings = lt iv_id = `ENGINE-GUARD` )
+      msg = 'unknown predicate must yield an ENGINE-GUARD finding' ).
+    DATA(ls) = find_rule( it_findings = lt iv_id = `ENGINE-GUARD` ).
     cl_abap_unit_assert=>assert_equals(
       act = ls-severity exp = zif_mdmdoc_types=>c_severity-warning
-      msg = 'unknown-predicate ENGINE finding must be WARNING' ).
+      msg = 'unknown-predicate ENGINE-GUARD finding must be WARNING' ).
+    cl_abap_unit_assert=>assert_equals(
+      act = ls-verdict_effect exp = zif_mdmdoc_types=>c_verdict-review
+      msg = 'unknown-predicate must fail closed to NEED_MANUAL_REVIEW' ).
   ENDMETHOD.
 
 
@@ -588,8 +591,8 @@ CLASS ltcl_rules IMPLEMENTATION.
       msg = 'generated rules must be replaced by the JSON override' ).
     " no engine-error finding on a clean parse
     cl_abap_unit_assert=>assert_false(
-      act = has_rule( it_findings = lt iv_id = `ENGINE` )
-      msg = 'clean JSON parse must not emit an ENGINE error' ).
+      act = has_rule( it_findings = lt iv_id = `ENGINE-GUARD` )
+      msg = 'clean JSON parse must not emit an ENGINE-GUARD error' ).
   ENDMETHOD.
 
 
@@ -603,14 +606,18 @@ CLASS ltcl_rules IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = has_rule( it_findings = lt iv_id = `BNK-001` )
       msg = 'broken JSON must fall back to generated rules' ).
-    " and an ENGINE (NOTE) finding is emitted
+    " and a fail-closed ENGINE-GUARD finding is emitted (the operator's
+    " intended override did not run -> verdict must not fold to ACCEPT)
     cl_abap_unit_assert=>assert_true(
-      act = has_rule( it_findings = lt iv_id = `ENGINE` )
-      msg = 'broken JSON must remember an ENGINE error finding' ).
-    DATA(ls) = find_rule( it_findings = lt iv_id = `ENGINE` ).
+      act = has_rule( it_findings = lt iv_id = `ENGINE-GUARD` )
+      msg = 'broken JSON must remember an ENGINE-GUARD error finding' ).
+    DATA(ls) = find_rule( it_findings = lt iv_id = `ENGINE-GUARD` ).
     cl_abap_unit_assert=>assert_equals(
-      act = ls-severity exp = zif_mdmdoc_types=>c_severity-note
-      msg = 'JSON-fallback ENGINE finding must be NOTE severity' ).
+      act = ls-severity exp = zif_mdmdoc_types=>c_severity-warning
+      msg = 'JSON-fallback ENGINE-GUARD finding must be WARNING severity' ).
+    cl_abap_unit_assert=>assert_equals(
+      act = ls-verdict_effect exp = zif_mdmdoc_types=>c_verdict-review
+      msg = 'JSON-fallback must fail closed to NEED_MANUAL_REVIEW' ).
   ENDMETHOD.
 
   METHOD skill_swap_partial.
