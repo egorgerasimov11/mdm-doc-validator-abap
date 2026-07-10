@@ -69,6 +69,14 @@ CLASS zcl_mdmdoc_extract DEFINITION
       IMPORTING iv_raw_text TYPE string
       CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
 
+    CLASS-METHODS officer_block_guard
+      IMPORTING iv_raw_text TYPE string
+      CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
+
+    CLASS-METHODS officer_name_line
+      IMPORTING iv_line       TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+
     CLASS-METHODS fix_statement_period
       IMPORTING iv_raw_text TYPE string
       CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
@@ -157,8 +165,11 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       audit_bank_ids(       EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
       fix_jp_form(          EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
       fix_statement_period( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
-      esignature_guard(     EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
     ENDIF.
+    " signature text channels run for EVERY class since S1 (a W-9 with a
+    " textual e-signature annotation used to false-fire W9-020)
+    esignature_guard( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
+    officer_block_guard( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
 
     " secrets = full values of every sensitive field present
     register_secrets( CHANGING cs_ext = rs_ext ).
@@ -464,9 +475,9 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
 
 
   METHOD esignature_guard.
-    " [GUARD:esignature_guard] mirror of Python stage_b._esignature_guard:
-    " a DocuSign/Adobe-Sign envelope IS a signature (electronic) — 'unsigned'
-    " would be wrong; the timestamp near it is the signing date.
+    " [GUARD:esignature_guard] mirror of Python stage_b._esignature_guard (S1):
+    " an e-signature envelope/annotation IS a signature (kind=electronic) for
+    " bank AND w9/w8; tokens shared with the Python text vote.
     IF iv_raw_text IS INITIAL.
       RETURN.
     ENDIF.
@@ -475,13 +486,32 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       RETURN.
     ENDIF.
     DATA(lv_low) = to_lower( iv_raw_text ).
-    IF lv_low CS `docusign envelope` OR lv_low CS `docusigned by`
-       OR lv_low CS `adobe sign`.
-      set_field( EXPORTING iv_name = `signed` iv_value = `true`
-                 CHANGING  ct_fields = cs_ext-fields ).
-      set_field( EXPORTING iv_name = `signature_evidence`
-                 iv_value = `electronically signed (DocuSign/e-signature envelope present)`
-                 CHANGING  ct_fields = cs_ext-fields ).
+    " [CONST:esign_markers]
+    DATA(lt_esign) = VALUE string_table(
+      ( `docusign envelope` ) ( `docusigned by` ) ( `adobe sign` )
+      ( `firmado digitalmente` ) ( `electronically signed` ) ( `digitally signed` ) ).
+    DATA lv_hit TYPE abap_bool VALUE abap_false.
+    LOOP AT lt_esign INTO DATA(lv_tok).
+      IF lv_low CS lv_tok.
+        lv_hit = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+    IF lv_hit = abap_false.
+      RETURN.
+    ENDIF.
+    set_field( EXPORTING iv_name = `signed` iv_value = `true`
+               CHANGING  ct_fields = cs_ext-fields ).
+    set_field( EXPORTING iv_name = `signature_kind` iv_value = `electronic`
+               CHANGING  ct_fields = cs_ext-fields ).
+    IF cs_ext-doc_class = zif_mdmdoc_types=>c_doc_class-bank.
+      DATA(lv_ev) = zcl_mdmdoc_norm=>field_value(
+        it_fields = cs_ext-fields iv_name = `signature_evidence` ).
+      IF zcl_mdmdoc_rules=>positive_evidence( lv_ev ) = abap_false.
+        set_field( EXPORTING iv_name = `signature_evidence`
+                   iv_value = `electronically signed (e-signature markers in document text)`
+                   CHANGING  ct_fields = cs_ext-fields ).
+      ENDIF.
       IF zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields
                                        iv_name = `doc_date` ) IS INITIAL.
         FIND REGEX `([0-9]{4}-[0-9]{2}-[0-9]{2})[[:space:]]*\|[[:space:]]*[0-9]{1,2}:[0-9]{2}`
@@ -491,7 +521,155 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
                      CHANGING  ct_fields = cs_ext-fields ).
         ENDIF.
       ENDIF.
+    ELSE.
+      " w9/w8: the annotation timestamp is the signing date
+      IF zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields
+                                       iv_name = `sign_date` ) IS INITIAL.
+        FIND REGEX `([0-9]{4}[.\-/][0-9]{2}[.\-/][0-9]{2})`
+             IN iv_raw_text SUBMATCHES DATA(lv_sdate).
+        IF sy-subrc = 0.
+          set_field( EXPORTING iv_name = `sign_date` iv_value = lv_sdate
+                     CHANGING  ct_fields = cs_ext-fields ).
+        ENDIF.
+      ENDIF.
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD officer_block_guard.
+    " [GUARD:officer_block_guard] mirror of Python fields.detect_officer_block
+    " + stage_b._finish_signature bank branch (S1): an UNSIGNED bank letter
+    " whose closing carries sign-off line + person name + title + contact is
+    " a typed officer block — compensating evidence (BNK-026), not a void
+    " (BNK-021). Also mirrors the typed-system fill. Never overwrites
+    " already-positive evidence.
+    IF cs_ext-doc_class <> zif_mdmdoc_types=>c_doc_class-bank
+       OR iv_raw_text IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA lt_lines TYPE string_table.
+    SPLIT iv_raw_text AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
+    DATA lv_found TYPE abap_bool VALUE abap_false.
+    DATA lv_snippet TYPE string.
+    DATA(lv_n) = lines( lt_lines ).
+    DATA lv_i TYPE i VALUE 1.
+    WHILE lv_i <= lv_n AND lv_found = abap_false.
+      DATA(lv_line) = to_lower( condense( lt_lines[ lv_i ] ) ).
+      " [CONST:officer_signoff]
+      FIND REGEX `^(sincerely|best regards|kind regards|warm regards|regards|yours truly|yours sincerely|respectfully( yours)?)[,.]?$`
+           IN lv_line.
+      IF sy-subrc = 0.
+        " window: the next 6 non-empty lines
+        DATA lt_win TYPE string_table.
+        CLEAR lt_win.
+        DATA(lv_j) = lv_i + 1.
+        WHILE lv_j <= lv_n AND lines( lt_win ) < 6.
+          DATA(lv_w) = condense( lt_lines[ lv_j ] ).
+          IF lv_w IS NOT INITIAL.
+            APPEND lv_w TO lt_win.
+          ENDIF.
+          lv_j = lv_j + 1.
+        ENDWHILE.
+        DATA lv_name TYPE string.
+        DATA lv_title TYPE string.
+        DATA lv_contact TYPE abap_bool VALUE abap_false.
+        CLEAR: lv_name, lv_title.
+        LOOP AT lt_win INTO DATA(lv_wl).
+          IF lv_name IS INITIAL AND officer_name_line( lv_wl ) = abap_true.
+            lv_name = lv_wl.
+          ENDIF.
+          " [CONST:officer_titles]
+          IF lv_title IS INITIAL.
+            FIND REGEX `vice president|president|manager|director|officer|treasurer|treasury|banker|relationship manager|\<v\.?p\.?\>`
+                 IN to_lower( lv_wl ).
+            IF sy-subrc = 0.
+              lv_title = lv_wl.
+            ENDIF.
+          ENDIF.
+          " [CONST:officer_contact]
+          IF lv_contact = abap_false.
+            FIND REGEX `phone|mobile|\<tel\>|fax|e-?mail|@|www\.|bank`
+                 IN to_lower( lv_wl ).
+            IF sy-subrc = 0.
+              lv_contact = abap_true.
+            ENDIF.
+          ENDIF.
+        ENDLOOP.
+        IF lv_name IS NOT INITIAL AND lv_title IS NOT INITIAL
+           AND lv_contact = abap_true.
+          lv_found = abap_true.
+          IF lv_title = lv_name.
+            lv_snippet = lv_name.
+          ELSE.
+            lv_snippet = |{ lv_name } — { lv_title }|.
+          ENDIF.
+          IF strlen( lv_snippet ) > 120.
+            lv_snippet = lv_snippet(120).
+          ENDIF.
+        ENDIF.
+      ENDIF.
+      lv_i = lv_i + 1.
+    ENDWHILE.
+    " typed-system notice is the fallback compensating channel
+    DATA(lv_low2) = to_lower( iv_raw_text ).
+    " [CONST:typed_system_markers]
+    DATA(lv_typed) = boolc( lv_low2 CS `computer-generated`
+                            OR lv_low2 CS `computer generated`
+                            OR lv_low2 CS `system-generated`
+                            OR lv_low2 CS `this is a computer` ).
+    IF lv_found = abap_true.
+      set_field( EXPORTING iv_name = `officer_block` iv_value = `true`
+                 CHANGING  ct_fields = cs_ext-fields ).
+    ENDIF.
+    IF zcl_mdmdoc_norm=>field_is_true( it_fields = cs_ext-fields
+                                       iv_name = `signed` ) = abap_true.
+      RETURN.
+    ENDIF.
+    DATA(lv_cur) = zcl_mdmdoc_norm=>field_value(
+      it_fields = cs_ext-fields iv_name = `signature_evidence` ).
+    IF zcl_mdmdoc_rules=>positive_evidence( lv_cur ) = abap_true.
+      RETURN.
+    ENDIF.
+    IF lv_found = abap_true.
+      set_field( EXPORTING iv_name = `signature_evidence`
+                 iv_value = |typed officer block: { lv_snippet }|
+                 CHANGING  ct_fields = cs_ext-fields ).
+    ELSEIF lv_typed = abap_true.
+      set_field( EXPORTING iv_name = `signature_evidence`
+                 iv_value = `computer-generated notice (states no signature required)`
+                 CHANGING  ct_fields = cs_ext-fields ).
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD officer_name_line.
+    " person-name line: 2-4 tokens, each starting uppercase, no digits, not an
+    " organization line (mirror of fields._officer_name_line)
+    DATA(lv_s) = condense( iv_line ).
+    IF lv_s IS INITIAL.
+      RETURN.
+    ENDIF.
+    FIND REGEX `[0-9]` IN lv_s.
+    IF sy-subrc = 0.
+      RETURN.
+    ENDIF.
+    FIND REGEX `\<(bank|banking|services|department|group|division|team|corporation|company)\>`
+         IN to_lower( lv_s ).
+    IF sy-subrc = 0.
+      RETURN.
+    ENDIF.
+    SPLIT lv_s AT space INTO TABLE DATA(lt_toks).
+    DELETE lt_toks WHERE table_line IS INITIAL.
+    IF lines( lt_toks ) < 2 OR lines( lt_toks ) > 4.
+      RETURN.
+    ENDIF.
+    LOOP AT lt_toks INTO DATA(lv_t).
+      DATA(lv_first) = lv_t(1).
+      IF lv_first <> to_upper( lv_first ) OR to_upper( lv_first ) = to_lower( lv_first ).
+        RETURN.   " not an uppercase LETTER
+      ENDIF.
+    ENDLOOP.
+    rv_yes = abap_true.
   ENDMETHOD.
 
 

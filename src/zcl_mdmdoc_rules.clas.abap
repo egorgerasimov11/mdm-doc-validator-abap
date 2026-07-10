@@ -28,6 +28,13 @@ CLASS zcl_mdmdoc_rules DEFINITION
       IMPORTING is_rule       TYPE zif_mdmdoc_types=>ty_rule
       RETURNING VALUE(rv_txt) TYPE string.
 
+    " PUBLIC since the S1 wave: zcl_mdmdoc_extract's officer-block/esign
+    " guards must not overwrite ALREADY-positive evidence, and the 23-phrase
+    " _EV_POSITIVE list must stay single-sourced (§8 constants parity).
+    CLASS-METHODS positive_evidence
+      IMPORTING iv_ev         TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+
   PRIVATE SECTION.
     " Parsed / fallback rule sets and the IBAN-length table.
     DATA gt_rules_bank TYPE zif_mdmdoc_types=>tt_rules.
@@ -98,9 +105,6 @@ CLASS zcl_mdmdoc_rules DEFINITION
       IMPORTING it_fields     TYPE zif_mdmdoc_types=>tt_fields
       RETURNING VALUE(rv_yes) TYPE abap_bool.
 
-    METHODS positive_evidence
-      IMPORTING iv_ev         TYPE string
-      RETURNING VALUE(rv_yes) TYPE abap_bool.
 
     " --- predicates (fired + detail) ------------------------------------
     METHODS p_field_empty

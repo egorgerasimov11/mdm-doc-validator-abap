@@ -38,6 +38,8 @@ CLASS ltcl_extract DEFINITION FINAL FOR TESTING
     METHODS ein_settles_tin      FOR TESTING.
     METHODS tin_mismatch_hard_note FOR TESTING.
     METHODS boxed_tin_fill       FOR TESTING.
+    METHODS esign_w9_sets_signed FOR TESTING.
+    METHODS officer_block_fills_evidence FOR TESTING.
 
     " normalization
     METHODS country_to_iso2      FOR TESTING.
@@ -252,6 +254,59 @@ CLASS ltcl_extract IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = field_of( is_ext = ls iv_name = `tin_type` ) exp = `SSN`
       msg = `a contested read settles nothing` ).
+  ENDMETHOD.
+
+  METHOD esign_w9_sets_signed.
+    " S1: a W-9 with a textual e-signature annotation is SIGNED (electronic);
+    " the annotation timestamp becomes the signing date. Mirror of the
+    " Python Motion regression (W9-020 used to false-fire).
+    DATA lt_llm TYPE zif_mdmdoc_types=>tt_fields.
+    INSERT fld( iv_name = `line1_name` iv_value = `Example Vendor LLC` )
+           INTO TABLE lt_llm.
+    INSERT fld( iv_name = `signed` iv_value = `false` ) INTO TABLE lt_llm.
+    DATA(lv_text) = |Form W-9 Request\nSign Here\n| &&
+      |Digitally signed by Alex T. Sample\nDate: 2026.01.27 11:51:15|.
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `w9` iv_doc_type = `w9`
+      it_llm_fields = lt_llm it_candidates = VALUE #( )
+      iv_llm_used = abap_true iv_raw_text = lv_text ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `signed` ) exp = `true`
+      msg = `e-signature annotation must sign the W-9` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `signature_kind` ) exp = `electronic`
+      msg = `kind must be electronic` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `sign_date` ) exp = `2026.01.27`
+      msg = `annotation timestamp is the signing date` ).
+  ENDMETHOD.
+
+  METHOD officer_block_fills_evidence.
+    " S1: an UNSIGNED bank letter with sign-off + name + title + contact gets
+    " typed-officer compensating evidence (BNK-026 path, not BNK-021).
+    DATA lt_llm TYPE zif_mdmdoc_types=>tt_fields.
+    INSERT fld( iv_name = `signed` iv_value = `false` ) INTO TABLE lt_llm.
+    INSERT fld( iv_name = `account_holder` iv_value = `Example Vendor LLC` )
+           INTO TABLE lt_llm.
+    DATA(lv_text) = |We hereby confirm the account details above.\n| &&
+      |Sincerely,\n\nJordan Q. Sample J.D.\n| &&
+      |Vice President \| Relationship Manager\n| &&
+      |Vela Federal Business Banking\n| &&
+      |Mobile: 000-000-0000 \| Fax: 000-000-0000\n|.
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = VALUE #( )
+      iv_llm_used = abap_true iv_raw_text = lv_text ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `officer_block` ) exp = `true`
+      msg = `officer block must be detected` ).
+    DATA(lv_ev) = field_of( is_ext = ls iv_name = `signature_evidence` ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_ev CS `typed officer block` )
+      msg = `compensating evidence must be filled` ).
+    cl_abap_unit_assert=>assert_true(
+      act = zcl_mdmdoc_rules=>positive_evidence( lv_ev )
+      msg = `evidence must satisfy the BNK-026 positive check` ).
   ENDMETHOD.
 
   METHOD boxed_tin_fill.
