@@ -23,7 +23,7 @@ Last updated: 2026-07-05.
 |---|---|---|
 | Enhancement method | Object Plug-in (BAdI) | |
 | Package / origin | `USMD7`, SAP, created 2008-04-25 | standard MDG |
-| **Multiple Use** | **NO (unchecked)** | ⚠️ only ONE implementation runs per filter value → **do not add a competing implementation**; call in from the existing one |
+| **Multiple Use** | **NO (unchecked)** | only ONE implementation runs **per filter value combination**. It is *not* a global "one implementation" rule — see A7: 53 implementations coexist, separated by filter. Do not collide with a taken combination. |
 | Limited filter use | no | |
 | Implemented at SAP only | no | custom implementations allowed |
 | **Instance Creation Mode** | **Reusing Instantiation** | the BAdI instance is reused → check methods fire repeatedly → **cache expensive work** (we cache the parsed PDF by SHA) |
@@ -132,6 +132,47 @@ Status *Implemented / Active*. Two notes for the customer's team:
   ends. No `ET_MESSAGE` is filled, no `SCREENING_RESULT` written (the intended fields
   `BP_TYPE / SCREENING_RESULT / ERROR_MESSSAGE` [sic] are only comments). GTS screening is unfinished.
 
+### A7. Implementation landscape — **53 implementations**
+
+*Source: SE18 → `USMD_RULE_SERVICE` → Enh. Spot Element Definitions → node `Implementations`.*
+
+Despite `Multiple Use = NO`, **53 implementations coexist**. They are separated by **filter values**,
+and the naming makes the filter dimensions obvious: **data model + entity type** (one implementation
+per entity).
+
+| Enhancement Implementation | BAdI Implementation | SWC | Meaning |
+|---|---|---|---|
+| `USMDZ7_RULE_SERVICE` | `USMDZ7_RS_ACCOUNT`, `_CCTR`, `_CELEM`, `_COMPANY`, `_CONSCHAR`, `_CONSGRP`, `_CONSUNIT`, `_FRS`, `_FSI`, `_FSIH`, `_FSIT`, `_IORDER`, `_PCTR`, `_PCTRG`, `_PCTRH`, `_SUBMPACK`, `_TRANSTYPE`, `_BDC`, `_BDCSET`, `_ACCCCDET` | MDG_FND | SAP standard, **one per entity** of the financial model |
+| `ZMDG_0G_RULE_SERVICE` | `ZMDG_0G_*_IMPL` | HOME | customer, model `0G` (MDG-F) |
+| **`ZMDG_BP`** | **`ZMDG_BP_BP_BKDTL_IMPL`**, **`ZMDG_BP_BP_CENTRL_IMPL`** | HOME | customer, model `BP`, per entity |
+| `ZMDG_BP_CUST` | `ZMDG_BP_CUST_BP_SALES_IMPL`, `ZMDG_BP_CUST_CUSGEN_IMPL` | HOME | MDG-C |
+| `ZMDG_BP_SUPPL` | `ZMDG_BP_SUPPL_BP_PORG_IMPL`, `ZMDG_BP_SUPPL_BP_VENGEN_IMPL` | HOME | MDG-S |
+| **`ZMDG_BP_FIELD_VALIDATIONS`** | **`ZBADI_MDG_BP_DERIVATION_VALI`** | HOME | "Customer & Sup…" — the implementation behind the class Egor first pointed at |
+| `ZMDG_BP_GTS_VALIDATION` | `ZMDG_GTS_BP_VALIDATION` | HOME | class `ZCLMDG_GTS_BP_VALIDATION` (A6) |
+| `ZMDG_MM_MATERIAL` | `ZMDG_MM_MARCBASIC_IMPL`, `_MARCMRPPP_IMPL`, `_UNITOFMSR_IMPL` | HOME | model `MM` |
+| `MDG_BS_BP_DESCRIPTION`, `MDG_BS_BP_TAXJURCODE`, `MDG_BS_SUPPL_ACCGRP_ID`, `MDG_BS_SUPPL_VENDOR_LIKE_UI`, `MDG_SF_RULE_SERVICE`, `USMDA3_IMP_RULE_SERVICE_BADI`, `USMDZ3_IMP_RULE_SERVICE_BADI` | — | MDG_FND / MDG_APPL | SAP standard |
+
+**Derived entity names of model `BP` in this system** (implementations are named after the entity
+they filter on):
+
+| Entity | Evidence |
+|---|---|
+| **`BP_BKDTL`** — bank details | `ZMDG_BP_BP_BKDTL_IMPL` (**not** `BP_BANKDT`, which we had guessed) |
+| `BP_CENTRL` — central data | `ZMDG_BP_BP_CENTRL_IMPL` |
+| `BP_SALES` | `ZMDG_BP_CUST_BP_SALES_IMPL` |
+| `CUSGEN` | `ZMDG_BP_CUST_CUSGEN_IMPL` |
+| `BP_PORG` | `ZMDG_BP_SUPPL_BP_PORG_IMPL` |
+| `BP_VENGEN` | `ZMDG_BP_SUPPL_BP_VENGEN_IMPL` |
+
+`ZCL_MDMDOC_MDG_MAP` defaults were corrected to `BP_BKDTL` accordingly. `ZMDMDOC_MDG_DISCOVER`
+overrides them from the live model anyway.
+
+**Still unresolved — how CR-level methods dispatch.** The filter is per entity, but
+`CHECK_CREQUEST_FINAL` is *not* entity-scoped. Which implementation(s) receive it (all matching the
+model? one with a blank entity filter?) is unknown until the `Filter` node and the `Filter Values` of
+the BP implementations are read. **This determines whether we may register our own implementation or
+must call in from an existing one.** See C1.
+
 ---
 
 ## B. Design consequences (why our code looks the way it does)
@@ -154,12 +195,16 @@ Status *Implemented / Active*. Two notes for the customer's team:
 
 ### C1. Blocks the integration (do these first)
 
-| # | Where | What to capture |
-|---|---|---|
-| 1 | SE18 → `USMD_RULE_SERVICE` → tree node **`Implementations`** | The list of implementations **and their filter values**. → identifies the class that owns `BP`, i.e. where the call-in goes. |
-| 2 | SE18 → same → tree node **`Filter`** | Which fields the filter uses (`USMD_MODEL` only? also `USMD_ENTITY`?). Determines whether a non-overlapping second implementation is even possible. |
-| 3 | SE18 → expand **`USMD_RULE_SERVICE_CROSS…`** | Its full name, **`Multiple Use` flag**, and interface. If Multiple Use is ON, we get our own implementation with no call-in into a foreign class — strictly better. |
-| 4 | SE24 → `IF_EX_USMD_RULE_SERVICE2` → Methods (+ Parameters of the CR-level one) | Its method list and signatures, to judge (3). |
+| # | Where | What to capture | Why it decides the design |
+|---|---|---|---|
+| 1 | SE18 → `USMD_RULE_SERVICE` → tree node **`Filter`** | the filter **field names** (`USMD_MODEL`? `USMD_ENTITY`? both?) | tells us the dimensions we must not collide on |
+| 2 | Same screen → select a BP row → button **`Filter Values`** — do it for `ZMDG_BP_FIELD_VALIDATIONS / ZBADI_MDG_BP_DERIVATION_VALI`, `ZMDG_BP_GTS_VALIDATION / ZMDG_GTS_BP_VALIDATION`, `ZMDG_BP / ZMDG_BP_BP_BKDTL_IMPL` | the concrete filter values of each | **the** decision: is there a free combination for our own implementation, or do we call in? If one of them has model=`BP` + entity=blank, that one owns the CR-level methods → call-in goes there |
+| 3 | SE18 → expand **`USMD_RULE_SERVICE_CROSS…`** | full name, **`Multiple Use` flag**, interface | if Multiple Use is ON, we get our own implementation with no call-in into a foreign class — strictly better |
+| 4 | SE24 → `IF_EX_USMD_RULE_SERVICE2` → Methods (+ Parameters of the CR-level one) | method list and signatures | to judge (3) |
+
+> A6 shows `ZCLMDG_GTS_BP_VALIDATION` implements `CHECK_ENTITY` and reaches for the CR context via
+> `cl_usmd_app_context=>get_context( )` instead of taking it from a parameter — a hint that its
+> filter is entity-scoped and that CR-level context is not handed to it. Confirm with (2).
 
 ### C2. Our code calls these APIs — verify they exist with these names
 

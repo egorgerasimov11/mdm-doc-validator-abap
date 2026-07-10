@@ -306,11 +306,13 @@ message log on mismatches.
 
 Checked on **MDQ/100** (SE18 / SE24) — do not "improve" the design without re-checking these:
 
-1. **BAdI `USMD_RULE_SERVICE` is NOT Multiple Use.** In SE18 → Enh. Spot Element Definitions →
-   Usability, `Multiple Use` is **unchecked** (Instance Creation Mode = *Reusing Instantiation*).
-   For one filter value only **one** implementation runs, and the `BP` model slot is normally
-   already taken (e.g. `ZCLMDG_GTS_BP_VALIDATION`). → **Do not add a competing implementation.**
-   Call our service from the existing one (see 10.5).
+1. **BAdI `USMD_RULE_SERVICE` is NOT Multiple Use** (SE18 → Usability; Instance Creation Mode =
+   *Reusing Instantiation*). That is a **per-filter-combination** rule, not a global one: the system
+   in fact carries **53 implementations**, separated by filter (data model + entity type — e.g.
+   `ZMDG_BP_BP_BKDTL_IMPL`, `ZMDG_BP_BP_CENTRL_IMPL`, `ZMDG_GTS_BP_VALIDATION`,
+   `ZBADI_MDG_BP_DERIVATION_VALI`). → Never collide with a taken combination. Until the filter values
+   are read (see MDG_SYSTEM_FACTS.md §C1), the **call-in into the existing BP implementation is the
+   safe default**; registering our own implementation may become possible afterwards.
 2. **`CHECK_CREQUEST_FINAL` is the right hook, not `CHECK_ENTITY`.** Verified signatures
    (SE24 `IF_EX_USMD_RULE_SERVICE` → Methods → Parameters):
 

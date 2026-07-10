@@ -37,15 +37,19 @@ ENDCLASS.
 CLASS zcl_mdmdoc_mdg_map IMPLEMENTATION.
 
   METHOD defaults.
+    " Entity names observed on MDQ/100: the customer's own BAdI implementations
+    " are named after the entity they filter on — ZMDG_BP_BP_BKDTL_IMPL and
+    " ZMDG_BP_BP_CENTRL_IMPL. So bank details = BP_BKDTL (NOT BP_BANKDT).
+    " ZMDMDOC_MDG_DISCOVER overrides all of this from the live model anyway.
     rt_map = VALUE #(
       ( sap_key = 'account_holder' entity = 'BP_CENTRL' field = 'NAME_ORG1' )
       ( sap_key = 'street'         entity = 'ADDRESS'   field = 'STREET' )
       ( sap_key = 'city'           entity = 'ADDRESS'   field = 'CITY1' )
-      ( sap_key = 'bank_country'   entity = 'BP_BANKDT' field = 'BANKS' )
-      ( sap_key = 'bank_key'       entity = 'BP_BANKDT' field = 'BANKL' )
-      ( sap_key = 'bank_account'   entity = 'BP_BANKDT' field = 'BANKN' )
-      ( sap_key = 'control_key'    entity = 'BP_BANKDT' field = 'BKONT' )
-      ( sap_key = 'iban'           entity = 'BP_BANKDT' field = 'IBAN' )
+      ( sap_key = 'bank_country'   entity = 'BP_BKDTL'  field = 'BANKS' )
+      ( sap_key = 'bank_key'       entity = 'BP_BKDTL'  field = 'BANKL' )
+      ( sap_key = 'bank_account'   entity = 'BP_BKDTL'  field = 'BANKN' )
+      ( sap_key = 'control_key'    entity = 'BP_BKDTL'  field = 'BKONT' )
+      ( sap_key = 'iban'           entity = 'BP_BKDTL'  field = 'IBAN' )
       ( sap_key = 'tin'            entity = 'BP_TAXNUM' field = 'TAXNUM' ) ).
   ENDMETHOD.
 
