@@ -1,6 +1,6 @@
 " GENERATED from tools/golden/golden_cases.json by tools/golden/gen_abap_golden.py
 " *** DO NOT EDIT BY HAND — edit the JSON corpus and re-run the generator ***
-" GOLDEN-HASH 2e94031875e05be5
+" GOLDEN-HASH 346ddd37d43a7aef
 " GEN-HASH caa4175f8b059eb4
 CLASS zcl_mdmdoc_golden_data DEFINITION
   PUBLIC
@@ -31,7 +31,7 @@ CLASS zcl_mdmdoc_golden_data DEFINITION
     CLASS-METHODS class_constructor.
 
     " corpus hash of the JSON this was generated from (check_parity freshness)
-    CONSTANTS c_golden_hash TYPE string VALUE `2e94031875e05be5`.
+    CONSTANTS c_golden_hash TYPE string VALUE `346ddd37d43a7aef`.
 ENDCLASS.
 
 
@@ -346,6 +346,40 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
         ( `W9-030` )
         ( `W8-001` )
         ( `W8-003` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `cn-letter-cnaps`
+      doc_class = `bank`
+      doc_type = `bank_letter`
+      filename = `cn_bank_letter.pdf`
+      raw_text = `银行账户信息` &&
+          cl_abap_char_utilities=>newline &&
+          `公司名称: 假冒服务有限公司` &&
+          cl_abap_char_utilities=>newline &&
+          `开户行:中国某某银行股份有限公司北京支行` &&
+          cl_abap_char_utilities=>newline &&
+          `账号: 35310188000049999` &&
+          cl_abap_char_utilities=>newline &&
+          `我公司银行信息如下(收付款账户):` &&
+          cl_abap_char_utilities=>newline &&
+          `开户银行名称:中国某某银行股份有限公司北京支行` &&
+          cl_abap_char_utilities=>newline &&
+          `账号: 35310188000049999` &&
+          cl_abap_char_utilities=>newline &&
+          `联行号: 303100000999`
+      llm_fields = VALUE #(
+        ( name = `account_holder` value = `假冒服务有限公司` )
+        ( name = `bank_name` value = `中国某某银行股份有限公司北京支行` )
+        ( name = `signed` value = `true` )
+      )
+      exp_fields = VALUE #(
+        ( name = `national_clearing` value = `…0999` )
+        ( name = `account_number` value = `…9999` )
+      )
+      exp_notes = VALUE #(
+        ( `national clearing code (CNAPS)` )
+        ( `bank country inferred: CN` )
       )
     ) TO gt_cases.
   ENDMETHOD.
