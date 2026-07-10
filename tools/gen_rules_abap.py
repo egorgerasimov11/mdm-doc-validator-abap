@@ -8,10 +8,16 @@ Output: src/zcl_mdmdoc_rules_data.clas.abap (+ .clas.xml if missing)
 Deterministic: same input -> byte-identical output (no timestamps).
 Fails loudly on: unknown when-operator, unknown severity/verdict_effect,
 regex constructs that classic ABAP (7.50) regex cannot run.
+
+--tier-min {learned|experimental|corp} filters the emitted rule set by
+governance tier (P7): 'corp' is the SAP v1 shipping profile (only
+tier: corp rules travel); default emits every tier. Rules WITHOUT a tier
+are always included (legacy rules must never vanish silently).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -142,6 +148,7 @@ def load_rules(path: Path) -> tuple[list[dict], list[str], dict]:
             "verdict_effect": effect or "",
             "message": str(raw.get("message", "")),
             "message_ru": str(raw.get("message_ru", "") or ""),
+            "tier": str(raw.get("tier", "") or ""),
         }
         rule.update(parse_when(rid, raw.get("when")))
         rules.append(rule)
@@ -176,6 +183,8 @@ def emit_rule(rule: dict, target: str) -> str:
     lines.append(f"        message = {abap_str(rule['message'])}")
     if rule["message_ru"]:
         lines.append(f"        message_ru = {abap_str(rule['message_ru'])}")
+    if rule.get("tier"):
+        lines.append(f"        tier = {abap_str(rule['tier'])}")
     lines.append(f"      ) TO {target}.")
     return "\n".join(lines)
 
@@ -253,9 +262,30 @@ CLAS_XML = """\
 """
 
 
+_TIER_RANK = {"learned": 0, "experimental": 1, "corp": 2}
+
+
+def filter_tier(rules: list[dict], tier_min: str | None) -> list[dict]:
+    """Shipping-profile filter (P7). Untiered rules always pass — a legacy
+    rule must never vanish because metadata was not annotated yet."""
+    if not tier_min:
+        return rules
+    floor = _TIER_RANK[tier_min]
+    return [r for r in rules
+            if not r.get("tier") or _TIER_RANK.get(r["tier"], floor) >= floor]
+
+
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--tier-min", choices=sorted(_TIER_RANK),
+                    help="emit only rules at/above this governance tier "
+                         "(corp = the SAP v1 shipping profile); untiered rules always pass")
+    args = ap.parse_args()
+
     bank, bank_types, bank_tables = load_rules(RULES_DIR / "banking.yaml")
     w9, w9_types, _ = load_rules(RULES_DIR / "w9.yaml")
+    bank = filter_tier(bank, args.tier_min)
+    w9 = filter_tier(w9, args.tier_min)
     iban_len = bank_tables.get("iban_length", {})
     if not iban_len:
         die("banking.yaml: tables.iban_length missing/empty")

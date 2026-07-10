@@ -41,6 +41,9 @@ INTERFACE zif_mdmdoc_types
            verdict_effect TYPE string,
            message        TYPE string,  " keeps {value} {value_masked} {detail} placeholders
            message_ru     TYPE string,
+           " governance metadata (P7): corp | experimental | learned; never read
+           " by the engine — used by the shipping-profile filter (--tier-min)
+           tier           TYPE string,
          END OF ty_rule,
          tt_rules TYPE STANDARD TABLE OF ty_rule WITH EMPTY KEY.
 

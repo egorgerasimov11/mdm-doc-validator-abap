@@ -41,6 +41,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `tterhead.`
         message_ru = `Инвойс как банковское подтверждение не принимается (даже с реквизитами). Запросить bank le` &&
         `tter / statement / supplier letterhead.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-002`
@@ -54,6 +55,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `pproval evidence.`
         message_ru = `Обычное письмо — не банковское подтверждение; только как исключение с явным одобрением Fin` &&
         `ance/Accounting.`
+        tier = `experimental`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-003`
@@ -67,6 +69,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `on letterhead.`
         message_ru = `Редактируемый файл (.docx/.xlsx/.txt/.rtf) не принимается как банковское подтверждение. За` &&
         `просить PDF/скан.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-005`
@@ -79,6 +82,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `olicy for this request type; verify every detail against SAP and the request context.`
         message_ru = `Самозаполненная AP/HCP форма банковских данных (не выпущена банком). Приемлемо по политике` &&
         ` HCP/AP для этого типа запроса; каждую деталь сверить с SAP и контекстом запроса.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-006`
@@ -93,6 +97,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `-form comparison, not from this document.`
         message_ru = `В выписке нет SWIFT/BIC — для выписок это норма; SWIFT берётся из сверки с SAP/формой запр` &&
         `оса, не из этого документа.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-004`
@@ -111,6 +116,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `ить bank letter / bank statement. Учитывай ограничения способа платежа (например, «ACH onl` &&
         `y — не для wire»). Причина kickback — «нет официального подтверждения поставщика», не «инв` &&
         `ойс».`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-010`
@@ -123,6 +129,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `CRITICAL`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `SWIFT/BIC {value} fails shape/country check: {detail}.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-011`
@@ -135,6 +142,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `CRITICAL`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `IBAN {value_masked}: {detail}.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-020`
@@ -146,6 +154,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
           ( name = `years` value = `2` ) )
         severity = `NOTE`
         message = `Document is older than 2 years ({detail}) — confirm the details are still current.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-021`
@@ -159,6 +168,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         verdict_effect = `WARNING`
         message = `Bank letter appears unsigned/unstamped (no officer block either).`
         message_ru = `Банковское письмо без подписи/печати (и без блока офицера).`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-026`
@@ -173,6 +183,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `d bank letters; note for the Data Owner.`
         message_ru = `Живой подписи/печати нет; есть компенсирующее свидетельство ({detail}) — норма для системн` &&
         `о выпускаемых банковских писем; заметка для Data Owner.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-022`
@@ -184,6 +195,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `WARNING`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `Screenshot appears cropped/partial — key fields may be cut off.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-023`
@@ -202,6 +214,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `WARNING`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `No account holder / beneficiary name readable on the document.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-024`
@@ -221,6 +234,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `Document shows no bank account identifiers (no IBAN, account number or routing) — cannot s` &&
         `erve as banking evidence as-is.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-025`
@@ -235,6 +249,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `WARNING`
         verdict_effect = `WARNING`
         message = `Bank name not readable on the document.`
+        tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
         id = `BNK-030`
@@ -248,6 +263,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `review manually.`
         message_ru = `Тип документа не установлен — неопознанный документ не принимается автоматически; проверьт` &&
         `е вручную.`
+        tier = `experimental`
       ) TO gt_rules_bank.
   ENDMETHOD.
 
@@ -263,6 +279,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         message = `This is a W-8 (foreign status), not a W-9 — apply W-8 treatment; do not map to Tax Number ` &&
         `1/2 as a W-9.`
         message_ru = `Это W-8 (иностранный статус), не W-9 — другой процесс обработки.`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-031`
@@ -274,6 +291,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `WARNING`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `Not recognized as a W-9 — confirm the document type before using it as US tax evidence.`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-001`
@@ -285,6 +303,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `CRITICAL`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `W-9 Line 1 (taxpayer legal name) is missing/unreadable — Line 1 must feed SAP Name 1.`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-002`
@@ -296,6 +315,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `WARNING`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `TIN not readable on the form — cannot verify SSN/EIN mapping.`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-003`
@@ -307,6 +327,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `WARNING`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `Federal tax classification (Line 3) unclear — Recipient Type cannot be verified.`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-010`
@@ -321,6 +342,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `CRITICAL`
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `TIN {value} has the wrong digit count: {detail} (EIN/SSN must be 9 digits).`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-011`
@@ -334,6 +356,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `TIN type conflicts with the tax classification: {detail}. Individual/Sole proprietor norma` &&
         `lly uses SSN (Tax Number 1); businesses use EIN (Tax Number 2).`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-012`
@@ -346,6 +369,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `Internal inconsistency: {detail}. Request clarification or an updated W-9 (rule DR-2026062` &&
         `4-131532).`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-013`
@@ -358,6 +382,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `Line 1 / Line 2 look swapped or collapsed: {detail}. Never swap or merge W-9 name lines (L` &&
         `ine 1 -> Name 1, Line 2 -> Name 2).`
+        tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
         id = `W9-020`
@@ -369,6 +394,7 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         severity = `WARNING`
         verdict_effect = `WARNING`
         message = `W-9 appears unsigned — note for review (blocking only if packet rules say so).`
+        tier = `corp`
       ) TO gt_rules_w9.
   ENDMETHOD.
 
