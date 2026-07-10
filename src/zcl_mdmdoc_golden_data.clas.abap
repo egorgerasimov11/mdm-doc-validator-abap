@@ -1,6 +1,6 @@
 " GENERATED from tools/golden/golden_cases.json by tools/golden/gen_abap_golden.py
 " *** DO NOT EDIT BY HAND — edit the JSON corpus and re-run the generator ***
-" GOLDEN-HASH 4c15b7952864a17d
+" GOLDEN-HASH c85b4302d43d7901
 " GEN-HASH caa4175f8b059eb4
 CLASS zcl_mdmdoc_golden_data DEFINITION
   PUBLIC
@@ -31,7 +31,7 @@ CLASS zcl_mdmdoc_golden_data DEFINITION
     CLASS-METHODS class_constructor.
 
     " corpus hash of the JSON this was generated from (check_parity freshness)
-    CONSTANTS c_golden_hash TYPE string VALUE `4c15b7952864a17d`.
+    CONSTANTS c_golden_hash TYPE string VALUE `c85b4302d43d7901`.
 ENDCLASS.
 
 
@@ -381,6 +381,48 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
       exp_notes = VALUE #(
         ( `national clearing code (CNAPS)` )
         ( `bank country inferred: CN` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `bank-address-grounding`
+      doc_class = `bank`
+      doc_type = `bank_letter`
+      filename = `remit_form.pdf`
+      raw_text = `Bank confirmation letter.` &&
+          cl_abap_char_utilities=>newline &&
+          `REMIT PAYMENT INFORMATION` &&
+          cl_abap_char_utilities=>newline &&
+          `Name on Account AcmeCo LLC` &&
+          cl_abap_char_utilities=>newline &&
+          `Bank Name First Example Bank` &&
+          cl_abap_char_utilities=>newline &&
+          `Bank Address 100 N. Example St..` &&
+          cl_abap_char_utilities=>newline &&
+          `City, State, Zip Code Springfield, CA. 00000` &&
+          cl_abap_char_utilities=>newline &&
+          `Account Number 001200000000` &&
+          cl_abap_char_utilities=>newline &&
+          `Routing for ACH 121000358` &&
+          cl_abap_char_utilities=>newline &&
+          `This letter is to confirm the account details below for AcmeCo LLC.` &&
+          cl_abap_char_utilities=>newline &&
+          `Sincerely,` &&
+          cl_abap_char_utilities=>newline &&
+          `Jordan Q. Sample` &&
+          cl_abap_char_utilities=>newline &&
+          `Vice President` &&
+          cl_abap_char_utilities=>newline &&
+          `First Example Bank`
+      llm_fields = VALUE #(
+        ( name = `account_holder` value = `AcmeCo LLC` )
+        ( name = `bank_name` value = `First Example Bank` )
+        ( name = `bank_country` value = `US` )
+        ( name = `account_number` value = `001200000000` )
+        ( name = `routing_aba` value = `121000358` )
+        ( name = `signed` value = `false` )
+      )
+      exp_fields = VALUE #(
+        ( name = `bank_address` value = `100 N. Example St, Springfield, CA. 00000` )
       )
     ) TO gt_cases.
   ENDMETHOD.

@@ -65,6 +65,7 @@ CLASS ltcl_extract DEFINITION FINAL FOR TESTING
     METHODS guard_holder_relationship FOR TESTING.
     METHODS guard_cnaps_grounded      FOR TESTING.
     METHODS guard_cnaps_relocated     FOR TESTING.
+    METHODS guard_bank_address_fill   FOR TESTING.
 ENDCLASS.
 
 
@@ -706,6 +707,36 @@ CLASS ltcl_extract IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = field_of( is_ext = ls iv_name = `account_number` ) exp = `35310188000042676`
       msg = `account not confused with the clearing code` ).
+  ENDMETHOD.
+
+
+  METHOD guard_bank_address_fill.
+    " a labeled 'Bank Address' line + the next City/State/Zip line fill an
+    " EMPTY bank_address; a model value is never overwritten.
+    DATA lt_llm TYPE zif_mdmdoc_types=>tt_fields.
+    DATA(lv_text) = |Bank Name First Example Bank{ cl_abap_char_utilities=>newline
+      }Bank Address 100 N. Tyron St..{ cl_abap_char_utilities=>newline
+      }City, State, Zip Code Charlotte, NC. 28202|.
+    DATA(lt_cand) = zcl_mdmdoc_regex=>extract_candidates( lv_text ).
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = lv_text ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `bank_address` )
+      exp = `100 N. Tyron St, Charlotte, NC. 28202`
+      msg = `labeled bank address plus the city line fill the empty field` ).
+
+    INSERT fld( iv_name = `bank_address` iv_value = `1 Model Street` ) INTO TABLE lt_llm.
+    ls = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = lv_text ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `bank_address` ) exp = `1 Model Street`
+      msg = `a model value is never overwritten` ).
   ENDMETHOD.
 
 

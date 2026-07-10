@@ -89,6 +89,10 @@ CLASS zcl_mdmdoc_extract DEFINITION
     CLASS-METHODS ground_doc_country
       CHANGING cs_ext TYPE zif_mdmdoc_types=>ty_extraction.
 
+    CLASS-METHODS ground_bank_address
+      IMPORTING iv_raw_text TYPE string
+      CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
+
     CLASS-METHODS officer_name_line
       IMPORTING iv_line       TYPE string
       RETURNING VALUE(rv_yes) TYPE abap_bool.
@@ -185,6 +189,7 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       ground_national_clearing( EXPORTING it_candidates = it_candidates CHANGING cs_ext = rs_ext ).
       ground_account_holder( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
       fix_statement_period( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
+      ground_bank_address(  EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
     ENDIF.
     " signature text channels run for EVERY class since S1 (a W-9 with a
     " textual e-signature annotation used to false-fire W9-020)
@@ -1100,6 +1105,58 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       set_field( EXPORTING iv_name = `doc_country` iv_value = lv_cc
                  CHANGING  ct_fields = cs_ext-fields ).
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD ground_bank_address.
+    " [GUARD:ground_bank_address] mirror of Python stage_b._ground_bank_address:
+    " a labeled 'Bank Address' line fills an EMPTY bank_address field — table-
+    " shaped remit forms print it verbatim while the model regularly skips it
+    " ('Bank Address | 100 N. Tyron St..' + 'City, State, Zip Code | Charlotte,
+    " NC. 28202'). The next line's labeled City/State/Zip is glued on.
+    " Deterministic, label-anchored, never overwrites a model value.
+    IF cs_ext-doc_class <> zif_mdmdoc_types=>c_doc_class-bank
+        OR iv_raw_text IS INITIAL
+        OR zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields
+                                         iv_name = `bank_address` ) IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    DATA lt_lines TYPE string_table.
+    SPLIT iv_raw_text AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
+    DATA lv_addr TYPE string.
+    DATA lv_take_next TYPE abap_bool VALUE abap_false.
+    LOOP AT lt_lines INTO DATA(lv_line).
+      IF lv_take_next = abap_true.
+        IF condense( lv_line ) IS INITIAL.
+          CONTINUE.                        " blank line between the two rows
+        ENDIF.
+        DATA lv_csz TYPE string.
+        FIND REGEX `^[ \t|>*-]{0,3}City,?[ \t]*State,?[ \t]*(&[ \t]*)?Zip([ \t]*Code)?[ \t:#.|]{0,6}([^ \t].*)`
+             IN lv_line IGNORING CASE
+             SUBMATCHES DATA(lv_a1) DATA(lv_a2) lv_csz.
+        IF sy-subrc = 0 AND lv_csz IS NOT INITIAL.
+          lv_csz = condense( lv_csz ).
+          REPLACE REGEX `[.,;]+$` IN lv_csz WITH ``.
+          lv_addr = |{ lv_addr }, { lv_csz }|.
+        ENDIF.
+        EXIT.
+      ENDIF.
+      FIND REGEX `^[ \t|>*-]{0,3}Bank('s)?[ \t]+Address([ \t]+for)?[ \t:#.|]{0,6}([^ \t].*)`
+           IN lv_line IGNORING CASE
+           SUBMATCHES DATA(lv_b1) DATA(lv_b2) DATA(lv_val).
+      IF sy-subrc = 0 AND strlen( condense( lv_val ) ) >= 5.
+        lv_addr = condense( lv_val ).
+        REPLACE REGEX `[.,;]+$` IN lv_addr WITH ``.
+        lv_take_next = abap_true.          " look at the very next non-empty line
+      ENDIF.
+    ENDLOOP.
+    IF lv_addr IS INITIAL.
+      RETURN.
+    ENDIF.
+    set_field( EXPORTING iv_name = `bank_address` iv_value = lv_addr
+               CHANGING  ct_fields = cs_ext-fields ).
+    cross_note( EXPORTING iv_note = `bank_address=filled from the labeled document line`
+                CHANGING  cs_ext = cs_ext ).
   ENDMETHOD.
 
 
