@@ -202,6 +202,24 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         tier = `experimental`
       ) TO gt_rules_bank.
     APPEND VALUE #(
+        id = `BNK-031`
+        name = `distinct_account_numbers`
+        applies_to = VALUE #(
+          ( `bank_letter` )
+          ( `bank_statement` )
+          ( `payment_instructions` )
+          ( `supplier_letterhead` ) )
+        when_op = `flag_true`
+        when_field = `distinct_accounts`
+        severity = `WARNING`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `The document carries two or more DIFFERENT labeled account numbers — verify with the reque` &&
+        `stor which account is actually being set up.`
+        message_ru = `В документе два и более РАЗНЫХ счёта с метками — уточните у заявителя, какой счёт заводитс` &&
+        `я.`
+        tier = `experimental`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
         id = `BNK-022`
         name = `partial_screenshot`
         applies_to = VALUE #(
