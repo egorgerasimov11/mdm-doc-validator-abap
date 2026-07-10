@@ -186,6 +186,22 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         tier = `corp`
       ) TO gt_rules_bank.
     APPEND VALUE #(
+        id = `BNK-027`
+        name = `settlement_issuer_strong`
+        applies_to = VALUE #(
+          ( `payment_instructions` ) )
+        when_op = `flag_true`
+        when_field = `settlement_issuer_strong`
+        severity = `NOTE`
+        message = `Payment instructions appear BANK-ISSUED (named bank plus an officer block or an account-he` &&
+        `ld statement) — materially stronger than a supplier's self-declaration; context for the Da` &&
+        `ta Owner.`
+        message_ru = `Платёжные инструкции выглядят ВЫПУЩЕННЫМИ БАНКОМ (именованный банк + officer block или под` &&
+        `тверждение ведения счёта) — существенно сильнее самодекларации поставщика; контекст для Da` &&
+        `ta Owner.`
+        tier = `experimental`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
         id = `BNK-022`
         name = `partial_screenshot`
         applies_to = VALUE #(

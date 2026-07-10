@@ -65,6 +65,14 @@ CLASS zcl_mdmdoc_extract DEFINITION
       IMPORTING iv_raw_text TYPE string
       CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
 
+    CLASS-METHODS fix_zh_form
+      IMPORTING iv_raw_text TYPE string
+      CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
+
+    CLASS-METHODS ground_account_holder
+      IMPORTING iv_raw_text TYPE string
+      CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
+
     CLASS-METHODS esignature_guard
       IMPORTING iv_raw_text TYPE string
       CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
@@ -164,6 +172,8 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
     IF iv_doc_class = zif_mdmdoc_types=>c_doc_class-bank.
       audit_bank_ids(       EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
       fix_jp_form(          EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
+      fix_zh_form(          EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
+      ground_account_holder( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
       fix_statement_period( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
     ENDIF.
     " signature text channels run for EVERY class since S1 (a W-9 with a
@@ -470,6 +480,161 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
                  CHANGING  ct_fields = cs_ext-fields ).
       cross_note( EXPORTING iv_note = `bank country inferred: JP (Japanese domestic form markers)`
                   CHANGING  cs_ext = cs_ext ).
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD fix_zh_form.
+    " [GUARD:fix_zh_form] mirror of Python stage_b._fix_zh_form: an 11-digit CN
+    " MOBILE number (1[3-9]xxxxxxxxx) is not an account number; labeled
+    " 账号/账户 fields rescue the real value; country is inferable. Gated on CN
+    " markers and the ABSENCE of the JP 口座 marker.
+    IF iv_raw_text IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lv_text) = zcl_mdmdoc_norm=>translate_fullwidth( iv_raw_text ).
+    IF lv_text CS `口座`.
+      RETURN.
+    ENDIF.
+    IF NOT ( lv_text CS `账` OR lv_text CS `帐` OR lv_text CS `户名` OR lv_text CS `开户` ).
+      RETURN.
+    ENDIF.
+
+    " CN mobile shape in a phone/contact context is not an account number
+    DATA(lv_acct) = zcl_mdmdoc_norm=>digits_only(
+      zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields iv_name = `account_number` ) ).
+    " [CONST:zh_mobile_shape]
+    FIND REGEX `^1[3-9][0-9]{9}$` IN lv_acct.
+    IF sy-subrc = 0.
+      DATA(lv_pos) = find( val = lv_text sub = lv_acct ).
+      DATA(lv_drop) = abap_false.
+      IF lv_pos < 0.
+        lv_drop = abap_true.
+      ELSE.
+        DATA(lv_off) = COND i( WHEN lv_pos > 24 THEN lv_pos - 24 ELSE 0 ).
+        DATA(lv_end) = lv_pos + strlen( lv_acct ) + 8.
+        IF lv_end > strlen( lv_text ).
+          lv_end = strlen( lv_text ).
+        ENDIF.
+        DATA(lv_ctx) = substring( val = lv_text off = lv_off len = lv_end - lv_off ).
+        " [CONST:zh_phone_context_labels]
+        FIND REGEX `电话|手机|联系人|联系方式|传真|邮编` IN lv_ctx.
+        IF sy-subrc = 0.
+          lv_drop = abap_true.
+        ENDIF.
+      ENDIF.
+      IF lv_drop = abap_true.
+        APPEND |account_number …{ lv_acct+7(4) } matches the CN mobile shape in a |
+            && |phone/contact context — dropped| TO cs_ext-warnings.
+        set_field( EXPORTING iv_name = `account_number` iv_value = ``
+                   CHANGING  ct_fields = cs_ext-fields ).
+      ENDIF.
+    ENDIF.
+
+    " labeled 账号/账户 rescue
+    IF zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields
+                                     iv_name = `account_number` ) IS INITIAL.
+      " [CONST:zh_account_labels]
+      FIND REGEX `(开户账号|收款账[户号]|银行账[户号]|账号|帐号|账户)[[:space:]]*[:：]?[[:space:]]*([0-9][0-9 -]{6,28}[0-9])`
+           IN lv_text SUBMATCHES DATA(lv_zlbl) DATA(lv_znum).
+      IF sy-subrc = 0.
+        REPLACE ALL OCCURRENCES OF ` ` IN lv_znum WITH ``.
+        REPLACE ALL OCCURRENCES OF `-` IN lv_znum WITH ``.
+        set_field( EXPORTING iv_name = `account_number` iv_value = lv_znum
+                   CHANGING  ct_fields = cs_ext-fields ).
+        cross_note( EXPORTING iv_note = `account number taken from the labeled 账号/账户 field`
+                    CHANGING  cs_ext = cs_ext ).
+      ENDIF.
+    ENDIF.
+
+    IF zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields
+                                     iv_name = `bank_country` ) IS INITIAL.
+      set_field( EXPORTING iv_name = `bank_country` iv_value = `CN`
+                 CHANGING  ct_fields = cs_ext-fields ).
+      cross_note( EXPORTING iv_note = `bank country inferred: CN (Chinese domestic form markers)`
+                  CHANGING  cs_ext = cs_ext ).
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD ground_account_holder.
+    " [GUARD:ground_account_holder] mirror of Python stage_b._ground_account_holder:
+    " a name printed under a signatory/contact label is the SIGNER, not the
+    " account owner — it moves to the derived account_signatory field; an empty
+    " holder is re-grounded from a relationship sentence ('verify that <NAME>
+    " is a customer'); ownership-labeled values are never touched.
+    IF iv_raw_text IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lv_holder) = condense( zcl_mdmdoc_norm=>field_value(
+      it_fields = cs_ext-fields iv_name = `account_holder` ) ).
+
+    IF lv_holder IS NOT INITIAL.
+      " line context = the line carrying the value plus the line above it
+      SPLIT iv_raw_text AT cl_abap_char_utilities=>newline INTO TABLE DATA(lt_lines).
+      DATA(lv_ctx) = ``.
+      DATA(lv_low_holder) = to_lower( lv_holder ).
+      LOOP AT lt_lines INTO DATA(lv_line).
+        IF to_lower( lv_line ) CS lv_low_holder.
+          IF sy-tabix > 1.
+            READ TABLE lt_lines INDEX sy-tabix - 1 INTO DATA(lv_prev).
+            lv_ctx = lv_prev && cl_abap_char_utilities=>newline && lv_line.
+          ELSE.
+            lv_ctx = lv_line.
+          ENDIF.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      IF lv_ctx IS NOT INITIAL.
+        " [CONST:signatory_labels]
+        FIND REGEX `\<(account[[:space:]]+signator(y|ies)|authori[sz]ed[[:space:]]+sign(er|ers|atory|atories)|`
+                && `signator(y|ies)|contact[[:space:]]+(person|name)|representative|attn\.?|attention|`
+                && `prepared[[:space:]]+by|requested[[:space:]]+by|submitted[[:space:]]+by)\>`
+             IN lv_ctx IGNORING CASE.
+        IF sy-subrc = 0.
+          FIND REGEX `account[[:space:]]*holder|beneficiary|account[[:space:]]*name|in[[:space:]]+the[[:space:]]+name[[:space:]]+of|`
+                  && `a[[:space:]]+nombre[[:space:]]+de|titular|kontoinhaber|intestat`
+               IN lv_ctx IGNORING CASE.
+          IF sy-subrc <> 0.
+            set_field( EXPORTING iv_name = `account_signatory` iv_value = lv_holder
+                       CHANGING  ct_fields = cs_ext-fields ).
+            set_field( EXPORTING iv_name = `account_holder` iv_value = ``
+                       CHANGING  ct_fields = cs_ext-fields ).
+            APPEND |account_holder '{ lv_holder }' sits under a signatory/contact label — |
+                && |moved to account_signatory (a signer is not the account owner)|
+                   TO cs_ext-warnings.
+            CLEAR lv_holder.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    IF lv_holder IS INITIAL.
+      " relationship sentences that NAME the owner
+      DATA lv_name TYPE string.
+      FIND REGEX `(verify|verifies|confirm|confirms|certify|certifies)[[:space:]]+that[[:space:]]+`
+              && `([A-Za-z][-A-Za-z0-9_&.,'() ]{2,70}?)[[:space:]]+is[[:space:]]+(a|an|our)[[:space:]]+`
+              && `(valued[[:space:]]+)?(customer|client|account[[:space:]]*holder)`
+           IN iv_raw_text IGNORING CASE
+           SUBMATCHES DATA(lv_r1) lv_name DATA(lv_r3) DATA(lv_r4) DATA(lv_r5).
+      IF sy-subrc <> 0.
+        FIND REGEX `([A-Za-z][-A-Za-z0-9_&.,'() ]{2,60}?)[[:space:]]+(holds|maintains)[[:space:]]+`
+                && `(a|an|the|its)?[[:space:]]*((business|checking|deposit)[[:space:]]+)*account`
+             IN iv_raw_text IGNORING CASE
+             SUBMATCHES lv_name DATA(lv_h2) DATA(lv_h3) DATA(lv_h4) DATA(lv_h5).
+      ENDIF.
+      IF sy-subrc = 0 AND lv_name IS NOT INITIAL.
+        DATA(lv_clean) = condense( lv_name ).
+        WHILE strlen( lv_clean ) > 0 AND substring( val = lv_clean off = strlen( lv_clean ) - 1 len = 1 ) CA `.,;:'"`.
+          lv_clean = substring( val = lv_clean off = 0 len = strlen( lv_clean ) - 1 ).
+        ENDWHILE.
+        IF strlen( lv_clean ) BETWEEN 3 AND 70.
+          set_field( EXPORTING iv_name = `account_holder` iv_value = lv_clean
+                     CHANGING  ct_fields = cs_ext-fields ).
+          cross_note( EXPORTING iv_note = `account holder grounded from the document's relationship sentence`
+                      CHANGING  cs_ext = cs_ext ).
+        ENDIF.
+      ENDIF.
     ENDIF.
   ENDMETHOD.
 

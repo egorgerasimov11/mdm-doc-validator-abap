@@ -57,6 +57,9 @@ CLASS ltcl_extract DEFINITION FINAL FOR TESTING
     METHODS guard_stmt_period         FOR TESTING.
     METHODS guard_regulator_noise     FOR TESTING.
     METHODS guard_jp_postal_rescue    FOR TESTING.
+    METHODS guard_zh_mobile_rescue    FOR TESTING.
+    METHODS guard_holder_signatory    FOR TESTING.
+    METHODS guard_holder_relationship FOR TESTING.
 ENDCLASS.
 
 
@@ -556,6 +559,62 @@ CLASS ltcl_extract IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lines( ls-warnings ) > 0 )
       msg = `postal-code warning emitted` ).
+  ENDMETHOD.
+
+
+  METHOD guard_zh_mobile_rescue.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    " model grabbed the contact mobile; the labeled 收款账号 field is right
+    INSERT fld( iv_name = `account_number` iv_value = `13712346060` ) INTO TABLE lt_llm.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `payment_instructions`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `开户银行: 某某银行 收款账号: 6222 0202 0000 1234 567 联系人: 王伟 电话: 13712346060` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `account_number` ) exp = `6222020200001234567`
+      msg = `CN mobile dropped, labeled account rescued` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `bank_country` ) exp = `CN`
+      msg = `CN inferred from domestic form markers` ).
+  ENDMETHOD.
+
+
+  METHOD guard_holder_signatory.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+    INSERT fld( iv_name = `account_holder` iv_value = `Charles A. Fakeperson` ) INTO TABLE lt_llm.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `This letter is to verify that Jamcorder LLC is a customer of Mercury.`
+                 && lv_nl && `Account signatory` && lv_nl && `Charles A. Fakeperson` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `account_signatory` ) exp = `Charles A. Fakeperson`
+      msg = `signatory-labeled name moved out of account_holder` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `account_holder` ) exp = `Jamcorder LLC`
+      msg = `holder re-grounded from the relationship sentence` ).
+  ENDMETHOD.
+
+
+  METHOD guard_holder_relationship.
+    DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.
+    DATA lt_cand TYPE zif_mdmdoc_types=>tt_fields.
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `Fake Trading GmbH maintains a business checking account with us.` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `account_holder` ) exp = `Fake Trading GmbH`
+      msg = `holder grounded from the holds/maintains sentence` ).
   ENDMETHOD.
 
 ENDCLASS.

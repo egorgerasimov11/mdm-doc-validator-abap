@@ -209,6 +209,24 @@
       "check_args": []
     },
     {
+      "id": "BNK-027",
+      "name": "settlement_issuer_strong",
+      "applies_to": [
+        "payment_instructions"
+      ],
+      "severity": "NOTE",
+      "verdict_effect": "",
+      "message": "Payment instructions appear BANK-ISSUED (named bank plus an officer block or an account-held statement) — materially stronger than a supplier's self-declaration; context for the Data Owner.",
+      "message_ru": "Платёжные инструкции выглядят ВЫПУЩЕННЫМИ БАНКОМ (именованный банк + officer block или подтверждение ведения счёта) — существенно сильнее самодекларации поставщика; контекст для Data Owner.",
+      "tier": "experimental",
+      "when_op": "flag_true",
+      "when_field": "settlement_issuer_strong",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
       "id": "BNK-022",
       "name": "partial_screenshot",
       "applies_to": [
