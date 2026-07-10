@@ -31,6 +31,9 @@ SELECTION-SCREEN END OF BLOCK b2.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
   PARAMETERS: cb_llm AS CHECKBOX DEFAULT ' '.
+  " p_ourl is resolved on the APPLICATION SERVER — the localhost default only
+  " works when Ollama runs on the app server itself. For a remote host use its
+  " full URL and save a report variant (background jobs need the variant too).
   PARAMETERS: p_ourl TYPE string LOWER CASE DEFAULT 'http://localhost:11434',
               p_omod TYPE string LOWER CASE DEFAULT 'qwen3:4b',
               p_ovis TYPE string LOWER CASE DEFAULT 'qwen2.5vl:7b',

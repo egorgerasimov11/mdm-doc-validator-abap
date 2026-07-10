@@ -197,6 +197,16 @@ CLASS zcl_mdmdoc_onboard IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD save_map.
+    " customizing write — gate on table authority instead of dumping/failing later
+    AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+      ID 'TABLE' FIELD 'ZMDMDOC_MAP'
+      ID 'ACTVT' FIELD '02'.
+    IF sy-subrc <> 0.
+      add( EXPORTING iv_name = 'save mapping to ZMDMDOC_MAP' iv_ok = abap_false
+                     iv_detail = 'no S_TABU_NAM change authority for ZMDMDOC_MAP — nothing saved (use SM30 or ask basis)'
+           CHANGING ct_checks = ct_checks ).
+      RETURN.
+    ENDIF.
     TRY.
         DATA lr_row TYPE REF TO data.
         CREATE DATA lr_row TYPE ('ZMDMDOC_MAP').
@@ -209,6 +219,7 @@ CLASS zcl_mdmdoc_onboard IMPLEMENTATION.
           ASSIGN COMPONENT 'FIELD'   OF STRUCTURE <row> TO <f>.               IF sy-subrc = 0. <f> = ls_m-field. ENDIF.
           MODIFY ('ZMDMDOC_MAP') FROM <row>.
         ENDLOOP.
+        COMMIT WORK.
         add( EXPORTING iv_name = 'save mapping to ZMDMDOC_MAP' iv_ok = abap_true
                        iv_detail = |{ lines( it_map ) } row(s) saved| CHANGING ct_checks = ct_checks ).
       CATCH cx_root INTO DATA(lx).
