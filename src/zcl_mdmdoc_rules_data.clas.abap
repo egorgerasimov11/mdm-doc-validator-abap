@@ -385,6 +385,25 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         message_ru = `Wire-routing {value_masked} имеет никогда не назначаемый префикс ФРС: {detail}.`
         tier = `corp`
       ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-047`
+        name = `bank_statement_not_acceptable`
+        applies_to = VALUE #(
+          ( `bank_statement` ) )
+        when_op = `always`
+        severity = `CRITICAL`
+        verdict_effect = `REJECT`
+        message = `Bank/account statement is not acceptable as bank support — an account cannot be verified f` &&
+        `rom a statement. Request a letter from the vendor's bank, a signed & stamped supplier lett` &&
+        `erhead stating the bank data, or a void check with a signed PDF letter. (MDG template poli` &&
+        `cy 2026-07-10: 'account statement' removed from accepted bank documents.)`
+        message_ru = `Банковская выписка (bank/account statement) не принимается как банковское подтверждение — ` &&
+        `по выписке нельзя верифицировать счёт. Запросить письмо из банка вендора, подписанный и за` &&
+        `веренный печатью letterhead поставщика с банковскими реквизитами, либо void check + подпис` &&
+        `анное PDF-письмо. (Политика MDG-шаблона 2026-07-10: «account statement» исключён из приним` &&
+        `аемых банковских документов.)`
+        tier = `corp`
+      ) TO gt_rules_bank.
   ENDMETHOD.
 
   METHOD build_w9.

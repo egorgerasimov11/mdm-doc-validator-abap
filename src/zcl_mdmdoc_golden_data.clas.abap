@@ -1,6 +1,6 @@
 " GENERATED from tools/golden/golden_cases.json by tools/golden/gen_abap_golden.py
 " *** DO NOT EDIT BY HAND — edit the JSON corpus and re-run the generator ***
-" GOLDEN-HASH 346ddd37d43a7aef
+" GOLDEN-HASH 4c15b7952864a17d
 " GEN-HASH caa4175f8b059eb4
 CLASS zcl_mdmdoc_golden_data DEFINITION
   PUBLIC
@@ -31,7 +31,7 @@ CLASS zcl_mdmdoc_golden_data DEFINITION
     CLASS-METHODS class_constructor.
 
     " corpus hash of the JSON this was generated from (check_parity freshness)
-    CONSTANTS c_golden_hash TYPE string VALUE `346ddd37d43a7aef`.
+    CONSTANTS c_golden_hash TYPE string VALUE `4c15b7952864a17d`.
 ENDCLASS.
 
 
@@ -74,9 +74,10 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
       exp_notes = VALUE #(
         ( `document date = statement period` )
       )
-      exp_verdict = `ACCEPT`
+      exp_verdict = `REJECT`
       exp_findings = VALUE #(
         ( `BNK-006` )
+        ( `BNK-047` )
       )
     ) TO gt_cases.
     APPEND VALUE #(
