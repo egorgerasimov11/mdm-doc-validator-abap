@@ -376,9 +376,13 @@ Still to confirm before activation:
 4. **Whether an `E` message in `CHECK_CREQUEST_FINAL`'s application log blocks the request.**
    The default is `W` only (`iv_block = abap_false`), so this is not on the critical path.
 
-> The same enhancement spot also contains a second BAdI, `USMD_RULE_SERVICE_CROSS_ET`
-> (interface `IF_EX_USMD_RULE_SERVICE2`, cross-entity-type validations). If its `Multiple Use` flag
-> is set, it is an alternative home for this check that needs no call-in into a foreign class.
+> The enhancement spot's second BAdI (`USMD_RULE_SERVICE_CROSS…`, interface
+> `IF_EX_USMD_RULE_SERVICE2`) is **not** an alternative: it exposes a single method `DERIVE`
+> (derivations, not validations). Ruled out — see MDG_SYSTEM_FACTS.md §A1.
+>
+> The BAdI filter is **`MODEL` + `ENTITYTYPE`**. Whether we may register our own implementation, or
+> must call in from the model-wide BP implementation, depends on the filter values of the existing
+> BP implementations — the one remaining open question (MDG_SYSTEM_FACTS.md §C1).
 
 ### 10.4. MDG-BP → SAP_KEYS mapping (to confirm)
 

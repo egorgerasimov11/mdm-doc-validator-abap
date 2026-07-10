@@ -29,13 +29,21 @@ Last updated: 2026-07-05.
 | **Instance Creation Mode** | **Reusing Instantiation** | the BAdI instance is reused → check methods fire repeatedly → **cache expensive work** (we cache the parsed PDF by SHA) |
 | Fallback class | none | |
 | Interface | `IF_EX_USMD_RULE_SERVICE` | |
-| Filter | exists (node `Filter` in the tree) — **field list not yet captured** | see B1 |
+| **Filter fields** | **`MODEL`** (Data Model) + **`ENTITYTYPE`** (Entity Type), both character-like, no constants | *Source: SE18 → node `Filter`.* An implementation is addressed by the pair (model, entity type). An implementation that restricts only `MODEL` matches **every** entity of that model. |
 
-**A sibling BAdI lives in the same enhancement spot:** `USMD_RULE_SERVICE_CROSS…` (name truncated on
-screen; almost certainly `USMD_RULE_SERVICE_CROSS_ET`), interface **`IF_EX_USMD_RULE_SERVICE2`**,
-description starts with "Valid…". *Technical Details* tab confirms both interfaces are referenced by
-the spot. Semantics: cross-entity-type validations — potentially a better home for our cross-entity
-comparison. **Its `Multiple Use` flag is not yet checked.**
+**The sibling BAdI in the same spot is NOT an option** — `USMD_RULE_SERVICE_CROSS…`
+(interface `IF_EX_USMD_RULE_SERVICE2`) has exactly **one method: `DERIVE`** ("Execute Derivations"):
+
+```
+IO_MODEL         Importing  REF TO IF_USMD_MODEL_EXT
+IO_CHANGED_DATA  Importing  REF TO IF_USMD_DELTA_BUFFER_READ   " data modified in current round trip
+IO_WRITE_DATA    Importing  REF TO IF_USMD_DELTA_BUFFER_WRITE  " derived data
+ET_MESSAGE_INFO  Exporting  USMD_T_MESSAGE                     " "Errors are changed to warnings!"
+```
+
+*Source: SE24 → `IF_EX_USMD_RULE_SERVICE2` → Methods / Parameters.* It is a **derivation** BAdI, not a
+validation one. The earlier idea of hosting our check there is **ruled out**. We stay on
+`CHECK_CREQUEST_FINAL` of `USMD_RULE_SERVICE`.
 
 ### A2. Interface `IF_EX_USMD_RULE_SERVICE` — 11 methods
 
@@ -195,16 +203,18 @@ must call in from an existing one.** See C1.
 
 ### C1. Blocks the integration (do these first)
 
+**Only one question is left here**, and it is the last blocker for the MDG entry point.
+
 | # | Where | What to capture | Why it decides the design |
 |---|---|---|---|
-| 1 | SE18 → `USMD_RULE_SERVICE` → tree node **`Filter`** | the filter **field names** (`USMD_MODEL`? `USMD_ENTITY`? both?) | tells us the dimensions we must not collide on |
-| 2 | Same screen → select a BP row → button **`Filter Values`** — do it for `ZMDG_BP_FIELD_VALIDATIONS / ZBADI_MDG_BP_DERIVATION_VALI`, `ZMDG_BP_GTS_VALIDATION / ZMDG_GTS_BP_VALIDATION`, `ZMDG_BP / ZMDG_BP_BP_BKDTL_IMPL` | the concrete filter values of each | **the** decision: is there a free combination for our own implementation, or do we call in? If one of them has model=`BP` + entity=blank, that one owns the CR-level methods → call-in goes there |
-| 3 | SE18 → expand **`USMD_RULE_SERVICE_CROSS…`** | full name, **`Multiple Use` flag**, interface | if Multiple Use is ON, we get our own implementation with no call-in into a foreign class — strictly better |
-| 4 | SE24 → `IF_EX_USMD_RULE_SERVICE2` → Methods (+ Parameters of the CR-level one) | method list and signatures | to judge (3) |
+| 1 | SE18 → `USMD_RULE_SERVICE` → node `Implementations` → select a row → button **`Filter Values`**. Do it for **`ZBADI_MDG_BP_DERIVATION_VALI`** (impl. `ZMDG_BP_FIELD_VALIDATIONS`), **`ZMDG_GTS_BP_VALIDATION`**, **`ZMDG_BP_BP_BKDTL_IMPL`** | the concrete `MODEL` / `ENTITYTYPE` values of each | **the** decision. If one of them restricts only `MODEL = BP` and leaves `ENTITYTYPE` unrestricted, that implementation is model-wide and therefore receives the CR-level methods → **the call-in goes into its class**. If every BP implementation pins a specific `ENTITYTYPE`, then the model-wide combination is free and we may register **our own implementation** instead — no foreign code touched. |
 
-> A6 shows `ZCLMDG_GTS_BP_VALIDATION` implements `CHECK_ENTITY` and reaches for the CR context via
-> `cl_usmd_app_context=>get_context( )` instead of taking it from a parameter — a hint that its
-> filter is entity-scoped and that CR-level context is not handed to it. Confirm with (2).
+> Corroborating hint (A6): `ZCLMDG_GTS_BP_VALIDATION` implements `CHECK_ENTITY` and fetches the CR
+> context via `cl_usmd_app_context=>get_context( )` instead of a parameter — consistent with an
+> entity-scoped filter that never receives CR-level calls.
+
+Ruled out, do not re-open: `USMD_RULE_SERVICE_CROSS…` / `IF_EX_USMD_RULE_SERVICE2` (derivation only,
+single method `DERIVE` — see A1).
 
 ### C2. Our code calls these APIs — verify they exist with these names
 
