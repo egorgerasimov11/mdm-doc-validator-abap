@@ -1,7 +1,7 @@
 " GENERATED from tools/golden/golden_cases.json by tools/golden/gen_abap_golden.py
 " *** DO NOT EDIT BY HAND — edit the JSON corpus and re-run the generator ***
-" GOLDEN-HASH 8a74945f3e2d6b66
-" GEN-HASH 332a326a58f70960
+" GOLDEN-HASH 2e94031875e05be5
+" GEN-HASH caa4175f8b059eb4
 CLASS zcl_mdmdoc_golden_data DEFINITION
   PUBLIC
   FINAL
@@ -31,7 +31,7 @@ CLASS zcl_mdmdoc_golden_data DEFINITION
     CLASS-METHODS class_constructor.
 
     " corpus hash of the JSON this was generated from (check_parity freshness)
-    CONSTANTS c_golden_hash TYPE string VALUE `8a74945f3e2d6b66`.
+    CONSTANTS c_golden_hash TYPE string VALUE `2e94031875e05be5`.
 ENDCLASS.
 
 
@@ -185,7 +185,8 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
       doc_class = `bank`
       doc_type = `bank_letter`
       filename = `no_holder.pdf`
-      raw_text = `Bank confirmation letter. IBAN FR14 2004 1010 0505 0001 3M02 606. BIC PSSTFRPP. Signed by officer.`
+      raw_text = `Bank confirmation letter. IBAN FR14 2004 1010 0505 0001 3M02 606. BIC PSSTFRPP. Signed by ` &&
+          `officer.`
       llm_fields = VALUE #(
         ( name = `bank_name` value = `La Banque Postale` )
         ( name = `signed` value = `true` )
@@ -211,6 +212,140 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
       exp_verdict = `ACCEPT`
       exp_findings = VALUE #(
         ( `BNK-020` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `zh-mobile-not-account`
+      doc_class = `bank`
+      doc_type = `bank_letter`
+      filename = `cn_notice.pdf`
+      raw_text = `会议通知 开户银行: 中国工商银行北京分行 收款账号: 6222 0202 0000 1234 567 户名: 某某协会 联系人: 王伟 电话: 13712346060`
+      llm_fields = VALUE #(
+        ( name = `account_number` value = `13712346060` )
+        ( name = `account_holder` value = `某某协会` )
+        ( name = `bank_name` value = `中国工商银行` )
+        ( name = `signed` value = `true` )
+      )
+      exp_notes = VALUE #(
+        ( `account number taken from the labeled 账号/账户 field` )
+        ( `bank country inferred: CN` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `zh-labeled-account-rescue`
+      doc_class = `bank`
+      doc_type = `bank_letter`
+      filename = `cn_sheet.pdf`
+      raw_text = `供应商银行信息 开户银行: 某某银行 银行账号: 1100 2233 4455 66 户名: 假冒贸易有限公司`
+      llm_fields = VALUE #(
+        ( name = `account_holder` value = `假冒贸易有限公司` )
+        ( name = `bank_name` value = `某某银行` )
+        ( name = `signed` value = `true` )
+      )
+      exp_notes = VALUE #(
+        ( `account_number=filled-from-OCR` )
+        ( `bank country inferred: CN` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `role-signatory-not-holder`
+      doc_class = `bank`
+      doc_type = `bank_letter`
+      filename = `mercury_letter.pdf`
+      raw_text = `Bank confirmation letter. This letter is to verify that Jamcorder LLC is a customer of Mer` &&
+          `cury Bank.` &&
+          cl_abap_char_utilities=>newline &&
+          `Account number: 202412345678` &&
+          cl_abap_char_utilities=>newline &&
+          `Account signatory` &&
+          cl_abap_char_utilities=>newline &&
+          `Charles A. Fakeperson` &&
+          cl_abap_char_utilities=>newline &&
+          `Signed by officer.`
+      llm_fields = VALUE #(
+        ( name = `account_holder` value = `Charles A. Fakeperson` )
+        ( name = `bank_name` value = `Mercury Bank` )
+        ( name = `signed` value = `true` )
+      )
+      exp_fields = VALUE #(
+        ( name = `account_holder` value = `Jamcorder LLC` )
+        ( name = `account_signatory` value = `Charles A. Fakeperson` )
+      )
+      exp_notes = VALUE #(
+        ( `account holder grounded from the document's relationship sentence` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `officer-block-bnk026`
+      doc_class = `bank`
+      doc_type = `bank_letter`
+      filename = `officer_letter.pdf`
+      raw_text = `Bank confirmation letter. This letter is to confirm the account details below. IBAN DE89 3` &&
+          `704 0044 0532 0130 00 held by Vela GmbH.` &&
+          cl_abap_char_utilities=>newline &&
+          `Sincerely,` &&
+          cl_abap_char_utilities=>newline &&
+          `Jordan Q. Sample` &&
+          cl_abap_char_utilities=>newline &&
+          `Vice President` &&
+          cl_abap_char_utilities=>newline &&
+          `Tel: +1 212 555 0000` &&
+          cl_abap_char_utilities=>newline &&
+          `Fakebank AG`
+      llm_fields = VALUE #(
+        ( name = `account_holder` value = `Vela GmbH` )
+        ( name = `bank_name` value = `Fakebank AG` )
+        ( name = `bank_country` value = `Germany` )
+        ( name = `signed` value = `false` )
+      )
+      exp_findings = VALUE #(
+        ( `BNK-026` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `w9-esignature-accepted`
+      doc_class = `w9`
+      doc_type = `w9`
+      filename = `motion_w9.pdf`
+      raw_text = `Form W-9 Request for Taxpayer Identification Number and Certification. 1 Name Motion Fake ` &&
+          `Industries LLC. 3 LLC. Employer identification number 00-1234567. Will Fakename. Digitally` &&
+          ` signed by Will Fakename. Date 2026.01.27.`
+      llm_fields = VALUE #(
+        ( name = `line1_name` value = `Motion Fake Industries LLC` )
+        ( name = `line3_classification` value = `LLC` )
+        ( name = `signed` value = `false` )
+      )
+      exp_fields = VALUE #(
+        ( name = `signed` value = `true` )
+        ( name = `signature_kind` value = `electronic` )
+        ( name = `sign_date` value = `2026.01.27` )
+      )
+      exp_notes = VALUE #(
+        ( `tin=filled-from-OCR` )
+      )
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `w8-own-schema`
+      doc_class = `w9`
+      doc_type = `w8`
+      filename = `w8ben_e_form.pdf`
+      raw_text = `Form W-8BEN-E Certificate of Status of Beneficial Owner for United States Tax Withholding ` &&
+          `and Reporting (Entities). Part I Identification of Beneficial Owner. Chapter 4 Status: Act` &&
+          `ive NFFE. Part XXX Certification.`
+      llm_fields = VALUE #(
+        ( name = `legal_name` value = `Nord Fake GmbH` )
+        ( name = `country_incorporation` value = `Germany` )
+        ( name = `chapter4_status` value = `Active NFFE` )
+        ( name = `signed` value = `false` )
+      )
+      exp_fields = VALUE #(
+        ( name = `legal_name` value = `Nord Fake GmbH` )
+      )
+      exp_verdict = `NEED_MANUAL_REVIEW`
+      exp_findings = VALUE #(
+        ( `W9-030` )
+        ( `W8-001` )
+        ( `W8-003` )
       )
     ) TO gt_cases.
   ENDMETHOD.
