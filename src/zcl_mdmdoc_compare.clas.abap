@@ -377,6 +377,13 @@ CLASS zcl_mdmdoc_compare IMPLEMENTATION.
     DATA(lv_iban)  = zcl_mdmdoc_norm=>norm_id( doc( is_ext = is_ext iv_name = 'iban' ) ).
     DATA(lv_rout)  = zcl_mdmdoc_norm=>norm_id( doc( is_ext = is_ext iv_name = 'routing_aba' ) ).
     DATA(lv_wires) = zcl_mdmdoc_norm=>norm_id( doc( is_ext = is_ext iv_name = 'routing_aba_wires' ) ).
+    " national clearing code (CN CNAPS / UK sort / AU BSB / IN IFSC): for these
+    " countries the SAP Bank Key IS the domestic clearing code
+    DATA(lv_clear) = zcl_mdmdoc_norm=>norm_id( doc( is_ext = is_ext iv_name = 'national_clearing' ) ).
+    DATA(lv_nckind) = doc( is_ext = is_ext iv_name = 'national_clearing_kind' ).
+    IF lv_nckind IS INITIAL.
+      lv_nckind = `domestic`.
+    ENDIF.
 
     " bank code sits after the 4-char country+check-digit prefix of the IBAN
     DATA lv_in_iban TYPE abap_bool.
@@ -391,19 +398,26 @@ CLASS zcl_mdmdoc_compare IMPLEMENTATION.
     ENDIF.
     DATA(lv_eq_rout) = boolc( ( lv_rout IS NOT INITIAL AND lv_rout = lv_key )
                            OR ( lv_wires IS NOT INITIAL AND lv_wires = lv_key ) ).
+    DATA(lv_eq_clear) = boolc( lv_clear IS NOT INITIAL AND lv_clear = lv_key ).
 
     DATA(lv_doc_side) = COND string(
       WHEN lv_rout IS NOT INITIAL OR lv_wires IS NOT INITIAL
         THEN dv( iv_kind = zif_mdmdoc_types=>c_kind-routing
                  iv_value = COND #( WHEN lv_rout IS NOT INITIAL THEN lv_rout ELSE lv_wires ) iv_policy = iv_policy )
+      WHEN lv_clear IS NOT INITIAL
+        THEN dv( iv_kind = zif_mdmdoc_types=>c_kind-routing
+                 iv_value = lv_clear iv_policy = iv_policy )
       WHEN lv_iban IS NOT INITIAL THEN `from IBAN`
       ELSE `` ).
 
-    IF lv_in_iban = abap_true OR lv_eq_rout = abap_true.
-      DATA(lv_note) = COND string( WHEN lv_in_iban = abap_true THEN `confirmed by document IBAN` ELSE `matches document routing` ).
+    IF lv_in_iban = abap_true OR lv_eq_rout = abap_true OR lv_eq_clear = abap_true.
+      DATA(lv_note) = COND string(
+        WHEN lv_in_iban = abap_true THEN `confirmed by document IBAN`
+        WHEN lv_eq_rout = abap_true THEN `matches document routing`
+        ELSE |matches document clearing code ({ lv_nckind })| ).
       add_row( EXPORTING iv_field = 'Bank Key' iv_doc = lv_doc_side iv_sap = lv_key
                          iv_status = zif_mdmdoc_types=>c_cmp_status-match iv_note = lv_note CHANGING ct_rows = ct_rows ).
-    ELSEIF lv_rout IS NOT INITIAL OR lv_iban IS NOT INITIAL.
+    ELSEIF lv_rout IS NOT INITIAL OR lv_iban IS NOT INITIAL OR lv_clear IS NOT INITIAL.
       add_row( EXPORTING iv_field = 'Bank Key' iv_doc = lv_doc_side iv_sap = lv_key
                          iv_status = zif_mdmdoc_types=>c_cmp_status-mismatch
                          iv_note = `no document-side confirmation` CHANGING ct_rows = ct_rows ).

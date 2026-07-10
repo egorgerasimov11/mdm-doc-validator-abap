@@ -94,6 +94,10 @@ CLASS zcl_mdmdoc_regex DEFINITION
       IMPORTING iv_flat TYPE string
       CHANGING  ct_out  TYPE zif_mdmdoc_types=>tt_fields.
 
+    CLASS-METHODS extract_clearing
+      IMPORTING iv_flat TYPE string
+      CHANGING  ct_out  TYPE zif_mdmdoc_types=>tt_fields.
+
     CLASS-METHODS extract_account
       IMPORTING iv_flat TYPE string
       CHANGING  ct_out  TYPE zif_mdmdoc_types=>tt_fields.
@@ -140,6 +144,7 @@ CLASS zcl_mdmdoc_regex IMPLEMENTATION.
     extract_swift( EXPORTING iv_flat = lv_flat CHANGING ct_out = rt_candidates ).
     extract_ein_ssn( EXPORTING iv_flat = lv_flat CHANGING ct_out = rt_candidates ).
     extract_routing( EXPORTING iv_flat = lv_flat CHANGING ct_out = rt_candidates ).
+    extract_clearing( EXPORTING iv_flat = lv_flat CHANGING ct_out = rt_candidates ).
     extract_account( EXPORTING iv_flat = lv_flat CHANGING ct_out = rt_candidates ).
     extract_boxed_tin( EXPORTING it_lines = lt_lines iv_text = lv_text
                        CHANGING  ct_out = rt_candidates ).
@@ -372,6 +377,31 @@ CLASS zcl_mdmdoc_regex IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD extract_clearing.
+    " national clearing codes — the domestic analog of a US routing number
+    " (CN CNAPS 联行号, IN IFSC, UK sort code, AU BSB, DE BLZ). For CN/GB/AU/IN
+    " this IS the SAP Bank Key. Label-anchored ONLY (mirrors ocr.regex_fields).
+    " [CONST:national_clearing_labels]
+    DATA(lt_pats) = VALUE zif_mdmdoc_types=>tt_fields(
+      ( name = `CNAPS` value = `(?:联行号码?|CNAPS)[^0-9]{0,10}(\d{12})\>` )
+      ( name = `IFSC`  value = `\<IFSC[^A-Z0-9]{0,8}([A-Z]{4}0[A-Z0-9]{6})\>` )
+      ( name = `SORT`  value = `\<sort\s*code[^0-9]{0,10}(\d{2}[- ]?\d{2}[- ]?\d{2})\>` )
+      ( name = `BSB`   value = `\<BSB[^0-9]{0,10}(\d{3}[- ]?\d{3})\>` )
+      ( name = `BLZ`   value = `(?:bankleitzahl|\<BLZ)[^0-9]{0,10}(\d{8})\>` ) ).
+    LOOP AT lt_pats ASSIGNING FIELD-SYMBOL(<p>).
+      DATA(lv_hit) = find_first( iv_pattern = <p>-value iv_text = iv_flat
+                                 iv_ignore_case = abap_true ).
+      IF lv_hit IS NOT INITIAL.
+        put( EXPORTING iv_name = `national_clearing`
+                       iv_value = to_upper( strip_sep( lv_hit ) ) CHANGING ct_out = ct_out ).
+        put( EXPORTING iv_name = `national_clearing_kind`
+                       iv_value = |{ <p>-name }| CHANGING ct_out = ct_out ).
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+
   METHOD extract_account.
     " account number: digits near an 'account' keyword (EN/ES/DE/FR/PT/RU/CJK):
     "   (?i)(?:acct labels)[^0-9]{0,14}([0-9][0-9 \-]{5,20}[0-9])
@@ -383,10 +413,11 @@ CLASS zcl_mdmdoc_regex IMPLEMENTATION.
       iv_ignore_case = abap_true ).
 
     DATA(lv_routing) = get( it_out = ct_out iv_name = `routing_aba` ).
+    DATA(lv_clearing) = get( it_out = ct_out iv_name = `national_clearing` ).
     LOOP AT lt ASSIGNING FIELD-SYMBOL(<m>).
       DATA(lv_acct) = strip_sep( <m>-g1 ).
       DATA(lv_len) = strlen( lv_acct ).
-      IF lv_len >= 6 AND lv_len <= 18 AND lv_acct <> lv_routing.
+      IF lv_len >= 6 AND lv_len <= 18 AND lv_acct <> lv_routing AND lv_acct <> lv_clearing.
         put( EXPORTING iv_name = `account_number` iv_value = lv_acct CHANGING ct_out = ct_out ).
         EXIT.
       ENDIF.
@@ -401,7 +432,7 @@ CLASS zcl_mdmdoc_regex IMPLEMENTATION.
       LOOP AT lt2 ASSIGNING FIELD-SYMBOL(<c>).
         DATA(lv_c) = strip_sep( <c>-g1 ).
         DATA(lv_cl) = strlen( lv_c ).
-        IF lv_cl >= 11 AND lv_cl <= 18 AND lv_c <> lv_routing.
+        IF lv_cl >= 11 AND lv_cl <= 18 AND lv_c <> lv_routing AND lv_c <> lv_clearing.
           " max(...,key=len): keep the longest; ties keep the first seen.
           IF lv_cl > lv_bestlen.
             lv_bestlen = lv_cl.

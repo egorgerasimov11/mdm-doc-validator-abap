@@ -60,6 +60,8 @@ CLASS ltcl_extract DEFINITION FINAL FOR TESTING
     METHODS guard_zh_mobile_rescue    FOR TESTING.
     METHODS guard_holder_signatory    FOR TESTING.
     METHODS guard_holder_relationship FOR TESTING.
+    METHODS guard_cnaps_grounded      FOR TESTING.
+    METHODS guard_cnaps_relocated     FOR TESTING.
 ENDCLASS.
 
 
@@ -615,6 +617,50 @@ CLASS ltcl_extract IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = field_of( is_ext = ls iv_name = `account_holder` ) exp = `Fake Trading GmbH`
       msg = `holder grounded from the holds/maintains sentence` ).
+  ENDMETHOD.
+
+
+  METHOD guard_cnaps_grounded.
+    " a labeled 联行号 lands in the derived national_clearing field.
+    DATA lt_llm TYPE zif_mdmdoc_types=>tt_fields.
+    DATA(lt_cand) = zcl_mdmdoc_regex=>extract_candidates(
+      `开户银行: 某某银行 账号: 35310188000042676 联行号: 303100000397` ).
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `payment_instructions`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `开户银行: 某某银行 账号: 35310188000042676 联行号: 303100000397` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `national_clearing` ) exp = `303100000397`
+      msg = `labeled CNAPS grounded into national_clearing` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `national_clearing_kind` ) exp = `CNAPS`
+      msg = `kind recorded` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `account_number` ) exp = `35310188000042676`
+      msg = `account not confused with the clearing code` ).
+  ENDMETHOD.
+
+
+  METHOD guard_cnaps_relocated.
+    " the model pressed the CNAPS into routing_aba: relocated, not demoted.
+    DATA lt_llm TYPE zif_mdmdoc_types=>tt_fields.
+    INSERT fld( iv_name = `routing_aba` iv_value = `303100000397` ) INTO TABLE lt_llm.
+    DATA(lt_cand) = zcl_mdmdoc_regex=>extract_candidates(
+      `开户银行: 某某银行 联行号: 303100000397` ).
+
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `payment_instructions`
+      it_llm_fields = lt_llm it_candidates = lt_cand iv_llm_used = abap_true
+      iv_raw_text = `开户银行: 某某银行 联行号: 303100000397` ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `routing_aba` ) exp = ``
+      msg = `12-digit value never stays in the ABA field` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `national_clearing` ) exp = `303100000397`
+      msg = `relocated to national_clearing` ).
   ENDMETHOD.
 
 ENDCLASS.

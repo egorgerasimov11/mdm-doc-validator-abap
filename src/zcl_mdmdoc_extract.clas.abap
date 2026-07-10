@@ -58,8 +58,13 @@ CLASS zcl_mdmdoc_extract DEFINITION
     " deterministic audit guards — ports of Python stage_b guards; each carries
     " a [GUARD:<name>] marker that tools/check_parity.py verifies against Python
     CLASS-METHODS audit_bank_ids
-      IMPORTING iv_raw_text TYPE string
-      CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
+      IMPORTING iv_raw_text   TYPE string
+                it_candidates TYPE zif_mdmdoc_types=>tt_fields OPTIONAL
+      CHANGING  cs_ext        TYPE zif_mdmdoc_types=>ty_extraction.
+
+    CLASS-METHODS ground_national_clearing
+      IMPORTING it_candidates TYPE zif_mdmdoc_types=>tt_fields
+      CHANGING  cs_ext        TYPE zif_mdmdoc_types=>ty_extraction.
 
     CLASS-METHODS fix_jp_form
       IMPORTING iv_raw_text TYPE string
@@ -170,9 +175,11 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
     " deterministic audit guards (mirror of Python stage_b — see PARITY.md GUARDS);
     " run AFTER crosscheck+normalize and BEFORE secret registration, Python order
     IF iv_doc_class = zif_mdmdoc_types=>c_doc_class-bank.
-      audit_bank_ids(       EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
+      audit_bank_ids(       EXPORTING iv_raw_text = iv_raw_text
+                                      it_candidates = it_candidates CHANGING cs_ext = rs_ext ).
       fix_jp_form(          EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
       fix_zh_form(          EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
+      ground_national_clearing( EXPORTING it_candidates = it_candidates CHANGING cs_ext = rs_ext ).
       ground_account_holder( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
       fix_statement_period( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
     ENDIF.
@@ -287,13 +294,34 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
     DATA lt_domestic TYPE string_table.
     DATA lt_rkeys TYPE string_table.
     SPLIT `routing_aba,routing_aba_wires` AT `,` INTO TABLE lt_rkeys.
+    DATA(lv_nc_cand) = zcl_mdmdoc_norm=>digits_only(
+      zcl_mdmdoc_norm=>field_value( it_fields = it_candidates iv_name = `national_clearing` ) ).
     LOOP AT lt_rkeys INTO DATA(lv_rk).
       DATA(lv_rv) = zcl_mdmdoc_norm=>digits_only(
         zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields iv_name = lv_rk ) ).
       IF lv_rv IS NOT INITIAL AND strlen( lv_rv ) <> 9.
-        APPEND lv_rv TO lt_domestic.
         set_field( EXPORTING iv_name = lv_rk iv_value = ``
                    CHANGING  ct_fields = cs_ext-fields ).
+        " a labeled national clearing code the model pressed into a routing
+        " field is REAL data — relocate it instead of demoting it to a note
+        IF lv_nc_cand IS NOT INITIAL AND lv_rv = lv_nc_cand
+            AND zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields
+                                              iv_name = `national_clearing` ) IS INITIAL.
+          DATA(lv_nc_kind) = zcl_mdmdoc_norm=>field_value(
+            it_fields = it_candidates iv_name = `national_clearing_kind` ).
+          set_field( EXPORTING iv_name = `national_clearing`
+                               iv_value = zcl_mdmdoc_norm=>field_value(
+                                 it_fields = it_candidates iv_name = `national_clearing` )
+                     CHANGING  ct_fields = cs_ext-fields ).
+          set_field( EXPORTING iv_name = `national_clearing_kind` iv_value = lv_nc_kind
+                     CHANGING  ct_fields = cs_ext-fields ).
+          cross_note( EXPORTING iv_note = |non-ABA routing value relocated to the national | &&
+                                          |clearing field ({ COND string( WHEN lv_nc_kind IS NOT INITIAL
+                                            THEN lv_nc_kind ELSE `domestic` ) })|
+                      CHANGING  cs_ext = cs_ext ).
+          CONTINUE.
+        ENDIF.
+        APPEND lv_rv TO lt_domestic.
       ENDIF.
     ENDLOOP.
     IF lines( lt_domestic ) > 0.
@@ -554,6 +582,35 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       cross_note( EXPORTING iv_note = `bank country inferred: CN (Chinese domestic form markers)`
                   CHANGING  cs_ext = cs_ext ).
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD ground_national_clearing.
+    " [GUARD:ground_national_clearing] mirror of Python
+    " stage_b._ground_national_clearing: a labeled national clearing code
+    " (CN CNAPS 联行号, IN IFSC, UK sort code, AU BSB, DE BLZ) is the domestic
+    " analog of a US routing number — for CN/GB/AU/IN it IS the SAP Bank Key.
+    " Derived field outside the model contract; never overwrites.
+    IF cs_ext-doc_class <> zif_mdmdoc_types=>c_doc_class-bank.
+      RETURN.
+    ENDIF.
+    DATA(lv_cand) = condense( zcl_mdmdoc_norm=>field_value(
+      it_fields = it_candidates iv_name = `national_clearing` ) ).
+    IF lv_cand IS INITIAL
+        OR zcl_mdmdoc_norm=>field_value( it_fields = cs_ext-fields
+                                         iv_name = `national_clearing` ) IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lv_kind) = condense( zcl_mdmdoc_norm=>field_value(
+      it_fields = it_candidates iv_name = `national_clearing_kind` ) ).
+    set_field( EXPORTING iv_name = `national_clearing` iv_value = lv_cand
+               CHANGING  ct_fields = cs_ext-fields ).
+    set_field( EXPORTING iv_name = `national_clearing_kind` iv_value = lv_kind
+               CHANGING  ct_fields = cs_ext-fields ).
+    cross_note( EXPORTING iv_note = |national clearing code ({ COND string(
+                  WHEN lv_kind IS NOT INITIAL THEN lv_kind ELSE `domestic` ) }) | &&
+                  |taken from the labeled field|
+                CHANGING  cs_ext = cs_ext ).
   ENDMETHOD.
 
 
