@@ -298,6 +298,10 @@ to the request. When the request is checked, the system reads the attachment, ex
 reads the CR's own data (name, address, bank, tax) and **raises a warning** in the request's
 message log on mismatches.
 
+> **All verified system facts, their sources, and the still-open questions live in
+> [docs/MDG_SYSTEM_FACTS.md](MDG_SYSTEM_FACTS.md).** Read it before changing anything in the MDG
+> path. What follows is the short version.
+
 ### 10.0. Two facts verified in the system (they drive the whole design)
 
 Checked on **MDQ/100** (SE18 / SE24) — do not "improve" the design without re-checking these:

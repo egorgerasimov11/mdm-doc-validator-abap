@@ -185,6 +185,8 @@ attachment, extracts the identifiers, reads the CR's own fields
 `SAP-000..009`) is source-independent and unit-tested; the MDG specifics are isolated in
 `ZCL_MDMDOC_MDG_READER` + the BAdI class (marked verify-on-system, outside abaplint).
 Implementation guide — **chapter 10 of [docs/INTEGRATION.md](docs/INTEGRATION.md)**.
+Verified facts about the real MDG system (BAdI signatures, `Multiple Use`, open questions) —
+**[docs/MDG_SYSTEM_FACTS.md](docs/MDG_SYSTEM_FACTS.md)**. Read it before changing the MDG path.
 
 **Adaptivity and pre-flight tests.** The MDG field mapping is not hardcoded:
 `ZMDMDOC_MDG_DISCOVER` reads the real model and proposes the `SAP_KEY → entity.field`
