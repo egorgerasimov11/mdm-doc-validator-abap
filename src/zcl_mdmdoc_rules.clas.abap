@@ -171,6 +171,65 @@ CLASS zcl_mdmdoc_rules DEFINITION
       IMPORTING is_ext    TYPE zif_mdmdoc_types=>ty_extraction
       EXPORTING ev_fired  TYPE abap_bool
                 ev_detail TYPE string.
+
+    "--- US TIN structure (skill us-tax-number-validator; W9-040/041) ---------
+    METHODS p_tin_structural
+      IMPORTING iv_value  TYPE string
+                is_ext    TYPE zif_mdmdoc_types=>ty_extraction
+      EXPORTING ev_fired  TYPE abap_bool
+                ev_detail TYPE string.
+
+    METHODS p_tin_placeholder
+      IMPORTING iv_value  TYPE string
+      EXPORTING ev_fired  TYPE abap_bool
+                ev_detail TYPE string.
+
+    METHODS tin_ph_kind
+      IMPORTING iv_d           TYPE string
+      RETURNING VALUE(rv_kind) TYPE string.
+
+    METHODS tin_ein_bad
+      IMPORTING iv_d             TYPE string
+      RETURNING VALUE(rv_detail) TYPE string.
+
+    METHODS tin_ssn_bad
+      IMPORTING iv_d             TYPE string
+      RETURNING VALUE(rv_detail) TYPE string.
+
+    METHODS tin_itin_bad
+      IMPORTING iv_d             TYPE string
+      RETURNING VALUE(rv_detail) TYPE string.
+
+    "--- US routing / account arithmetic (skill sap-us-bank-validate) ---------
+    METHODS p_routing_format
+      IMPORTING iv_value  TYPE string
+      EXPORTING ev_fired  TYPE abap_bool
+                ev_detail TYPE string.
+
+    METHODS p_routing_checksum
+      IMPORTING iv_value  TYPE string
+      EXPORTING ev_fired  TYPE abap_bool
+                ev_detail TYPE string.
+
+    METHODS p_routing_prefix
+      IMPORTING iv_value  TYPE string
+      EXPORTING ev_fired  TYPE abap_bool
+                ev_detail TYPE string.
+
+    METHODS p_account_sig_digits
+      IMPORTING iv_value  TYPE string
+                it_args   TYPE zif_mdmdoc_types=>tt_args
+      EXPORTING ev_fired  TYPE abap_bool
+                ev_detail TYPE string.
+
+    "helpers for the routing arithmetic (pure functions)
+    METHODS routing_sum
+      IMPORTING iv_d          TYPE string
+      RETURNING VALUE(rv_sum) TYPE i.
+
+    METHODS routing_prefix_ok
+      IMPORTING iv_d         TYPE string
+      RETURNING VALUE(rv_ok) TYPE abap_bool.
 ENDCLASS.
 
 
@@ -463,6 +522,12 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       WHEN `ein_shape`.
         p_ein_shape( EXPORTING iv_value = iv_value it_args = it_args
                      IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
+      WHEN `tin_structural`.
+        p_tin_structural( EXPORTING iv_value = iv_value is_ext = is_ext
+                          IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
+      WHEN `tin_placeholder`.
+        p_tin_placeholder( EXPORTING iv_value = iv_value
+                           IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
       WHEN `tin_type_vs_classification`.
         p_tin_type_vs_classification( EXPORTING is_ext = is_ext
                                       IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
@@ -484,6 +549,18 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       WHEN `w8_ch4_cert_missing`.
         p_w8_ch4_cert_missing( EXPORTING is_ext = is_ext
                                IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
+      WHEN `routing_format`.
+        p_routing_format( EXPORTING iv_value = iv_value
+                          IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
+      WHEN `routing_checksum`.
+        p_routing_checksum( EXPORTING iv_value = iv_value
+                            IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
+      WHEN `routing_prefix`.
+        p_routing_prefix( EXPORTING iv_value = iv_value
+                          IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
+      WHEN `account_sig_digits`.
+        p_account_sig_digits( EXPORTING iv_value = iv_value it_args = it_args
+                              IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
       WHEN OTHERS.
         ev_unknown = abap_true.
     ENDCASE.
@@ -735,6 +812,149 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD tin_ph_kind.
+    CLEAR rv_kind.
+    IF strlen( iv_d ) <> 9.
+      RETURN.
+    ENDIF.
+    DATA(lv_first) = iv_d(1).
+    DATA(lv_same)  = abap_true.
+    DATA(lv_i)     = 1.
+    WHILE lv_i < 9.
+      IF iv_d+lv_i(1) <> lv_first.
+        lv_same = abap_false.
+        EXIT.
+      ENDIF.
+      lv_i = lv_i + 1.
+    ENDWHILE.
+    IF lv_same = abap_true.
+      rv_kind = `repeated-single-digit placeholder`.
+      RETURN.
+    ENDIF.
+    " [CONST:known_fake_tins] FMX never-issued + SSA advertising SSNs
+    DATA(lt_fake) = VALUE string_table( ( `123456789` ) ( `987654321` ) ( `078051120` )
+                                        ( `219099999` ) ( `987654320` ) ( `987654322` )
+                                        ( `987654323` ) ( `987654324` ) ( `987654325` )
+                                        ( `987654326` ) ( `987654327` ) ( `987654328` )
+                                        ( `987654329` ) ).
+    IF line_exists( lt_fake[ table_line = iv_d ] ).
+      rv_kind = `known never-issued / reserved example TIN`.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD tin_ein_bad.
+    CLEAR rv_detail.
+    " [CONST:ein_never_prefixes] IRS never-assigned EIN prefixes (17 of 100)
+    DATA(lt_never) = VALUE string_table( ( `00` ) ( `07` ) ( `08` ) ( `09` ) ( `17` )
+                                         ( `18` ) ( `19` ) ( `28` ) ( `29` ) ( `49` )
+                                         ( `69` ) ( `70` ) ( `78` ) ( `79` ) ( `89` )
+                                         ( `96` ) ( `97` ) ).
+    IF line_exists( lt_never[ table_line = iv_d(2) ] ).
+      rv_detail = `EIN prefix is not an IRS-assigned prefix`.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD tin_ssn_bad.
+    CLEAR rv_detail.
+    DATA(lv_area)   = iv_d(3).
+    DATA(lv_group)  = iv_d+3(2).
+    DATA(lv_serial) = iv_d+5(4).
+    DATA(lv_first)  = iv_d(1).
+    " [CONST:ssn_area_invalid] SSA: areas 000/666/9xx never issued
+    IF lv_area = `000` OR lv_area = `666` OR lv_first = `9`.
+      rv_detail = `SSN area is a never-issued area`.
+      RETURN.
+    ENDIF.
+    IF lv_group = `00`.
+      rv_detail = `SSN group is invalid`.
+      RETURN.
+    ENDIF.
+    IF lv_serial = `0000`.
+      rv_detail = `SSN serial is invalid`.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD tin_itin_bad.
+    CLEAR rv_detail.
+    DATA(lv_g) = CONV i( iv_d+3(2) ).
+    " [CONST:itin_group_ranges] IRS Pub 4757: 50-65/70-88/90-92/94-99; 93 = ATIN
+    IF ( lv_g >= 50 AND lv_g <= 65 ) OR ( lv_g >= 70 AND lv_g <= 88 )
+       OR ( lv_g >= 90 AND lv_g <= 93 ) OR ( lv_g >= 94 AND lv_g <= 99 ).
+      RETURN.
+    ENDIF.
+    rv_detail = `ITIN group is outside the IRS-assigned ranges`.
+  ENDMETHOD.
+
+
+  METHOD p_tin_placeholder.
+    CLEAR: ev_fired, ev_detail.
+    DATA(lv_d) = zcl_mdmdoc_norm=>digits_only( iv_value ).
+    IF strlen( lv_d ) <> 9.
+      RETURN.
+    ENDIF.
+    DATA(lv_kind) = tin_ph_kind( lv_d ).
+    IF lv_kind IS NOT INITIAL.
+      ev_fired  = abap_true.
+      ev_detail = lv_kind.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD p_tin_structural.
+    " Printed hyphenation picks the type; bare 9 digits fall back to tin_type,
+    " then to any-type-accepts. Disjoint with p_tin_placeholder by design.
+    CLEAR: ev_fired, ev_detail.
+    DATA(lv_v) = iv_value.
+    CONDENSE lv_v.
+    DATA(lv_d) = zcl_mdmdoc_norm=>digits_only( iv_value ).
+    IF strlen( lv_d ) <> 9 OR tin_ph_kind( lv_d ) IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lv_bad) = ``.
+    " [CONST:tin_format_shapes]
+    IF regex_matches_start( iv_pattern = `^\d\d[- ]\d{7}$` iv_text = lv_v ) = abap_true.
+      lv_bad = tin_ein_bad( lv_d ).
+    ELSEIF regex_matches_start( iv_pattern = `^\d{3}-\d\d-\d{4}$` iv_text = lv_v ) = abap_true.
+      IF lv_d(1) = `9`.
+        lv_bad = tin_itin_bad( lv_d ).
+      ELSE.
+        lv_bad = tin_ssn_bad( lv_d ).
+      ENDIF.
+    ELSE.
+      DATA(lv_tt) = to_upper( field_str( it_fields = is_ext-fields iv_name = `tin_type` ) ).
+      CONDENSE lv_tt.
+      IF lv_tt = `EIN`.
+        lv_bad = tin_ein_bad( lv_d ).
+      ELSEIF lv_tt = `SSN`.
+        IF lv_d(1) = `9`.
+          lv_bad = tin_itin_bad( lv_d ).
+        ELSE.
+          lv_bad = tin_ssn_bad( lv_d ).
+        ENDIF.
+      ELSE.
+        DATA(lv_ok) = abap_false.
+        IF tin_ein_bad( lv_d ) IS INITIAL.
+          lv_ok = abap_true.
+        ELSEIF lv_d(1) <> `9` AND tin_ssn_bad( lv_d ) IS INITIAL.
+          lv_ok = abap_true.
+        ELSEIF lv_d(1) = `9` AND tin_itin_bad( lv_d ) IS INITIAL.
+          lv_ok = abap_true.
+        ENDIF.
+        IF lv_ok = abap_false.
+          lv_bad = `9 digits match no valid EIN/SSN/ITIN structure`.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    IF lv_bad IS NOT INITIAL.
+      ev_fired  = abap_true.
+      ev_detail = lv_bad.
+    ENDIF.
+  ENDMETHOD.
+
+
   METHOD p_tin_type_vs_classification.
     DATA(lv_cls) = zcl_mdmdoc_norm=>norm_classification(
                      field_str( it_fields = is_ext-fields iv_name = `line3_classification` ) ).
@@ -909,6 +1129,114 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       WHEN OTHERS.
         rv_txt = is_rule-when_op.
     ENDCASE.
+  ENDMETHOD.
+
+
+  "--- US routing / account arithmetic (mirrors predicates.py; see PARITY.md) --
+
+  METHOD routing_sum.
+    " ABA 3-7-1 weighted sum. iv_d must be 9 numeric digits.
+    DATA lv_c TYPE c LENGTH 1.
+    DATA lv_n TYPE i.
+    DO 9 TIMES.
+      DATA(lv_off) = sy-index - 1.
+      lv_c = iv_d+lv_off(1).
+      lv_n = lv_c.
+      rv_sum = rv_sum + SWITCH i( lv_off MOD 3 WHEN 0 THEN 3 WHEN 1 THEN 7 ELSE 1 ) * lv_n.
+    ENDDO.
+  ENDMETHOD.
+
+
+  METHOD routing_prefix_ok.
+    " Federal Reserve routing symbol: 00, 01-12, 21-32, 61-72, 80. 62 IS valid.
+    DATA lv_p TYPE i.
+    lv_p = iv_d(2).
+    rv_ok = xsdbool( ( lv_p >= 0 AND lv_p <= 12 ) OR ( lv_p >= 21 AND lv_p <= 32 )
+                     OR ( lv_p >= 61 AND lv_p <= 72 ) OR lv_p = 80 ).
+  ENDMETHOD.
+
+
+  METHOD p_routing_format.
+    DATA(lv_raw) = iv_value.
+    CONDENSE lv_raw.
+    ev_fired = abap_false.
+    IF lv_raw IS INITIAL.
+      RETURN.
+    ENDIF.
+    IF strlen( lv_raw ) = 9 AND lv_raw CO `0123456789`.
+      RETURN.
+    ENDIF.
+    FIND REGEX `^[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$` IN lv_raw.
+    IF sy-subrc = 0.
+      ev_fired  = abap_true.
+      ev_detail = `a SWIFT/BIC code, not a routing number — it belongs in the SWIFT field`.
+      RETURN.
+    ENDIF.
+    DATA(lv_clean) = zcl_mdmdoc_norm=>digits_only( lv_raw ).
+    IF strlen( lv_clean ) = 9 AND routing_sum( lv_clean ) MOD 10 = 0.
+      ev_fired  = abap_true.
+      ev_detail = |{ strlen( lv_raw ) } chars with stray punctuation — cleans to a |
+               && |checksum-valid 9-digit number; re-enter digits only|.
+      RETURN.
+    ENDIF.
+    ev_fired  = abap_true.
+    ev_detail = |{ strlen( lv_raw ) } chars, must be exactly 9 numeric digits|.
+  ENDMETHOD.
+
+
+  METHOD p_routing_checksum.
+    DATA(lv_raw) = iv_value.
+    CONDENSE lv_raw.
+    ev_fired = abap_false.
+    IF NOT ( strlen( lv_raw ) = 9 AND lv_raw CO `0123456789` ).
+      RETURN.   " format problems are routing_format's job
+    ENDIF.
+    DATA(lv_sum) = routing_sum( lv_raw ).
+    IF lv_sum MOD 10 = 0.
+      RETURN.
+    ENDIF.
+    ev_fired  = abap_true.
+    ev_detail = |weighted sum { lv_sum }, { lv_sum } mod 10 = { lv_sum MOD 10 } ≠ 0 — |
+             && |mathematically cannot be a real routing number|.
+  ENDMETHOD.
+
+
+  METHOD p_routing_prefix.
+    DATA(lv_raw) = iv_value.
+    CONDENSE lv_raw.
+    ev_fired = abap_false.
+    IF NOT ( strlen( lv_raw ) = 9 AND lv_raw CO `0123456789` )
+       OR routing_sum( lv_raw ) MOD 10 <> 0.
+      RETURN.   " format/checksum rules own those failures
+    ENDIF.
+    IF routing_prefix_ok( lv_raw ) = abap_true.
+      RETURN.
+    ENDIF.
+    ev_fired  = abap_true.
+    ev_detail = |first two digits { lv_raw(2) } are never assigned |
+             && |(valid: 00, 01-12, 21-32, 61-72, 80)|.
+  ENDMETHOD.
+
+
+  METHOD p_account_sig_digits.
+    DATA(lv_raw) = iv_value.
+    CONDENSE lv_raw.
+    ev_fired = abap_false.
+    IF lv_raw IS INITIAL.
+      RETURN.   " a missing account is a separate missing-field rule
+    ENDIF.
+    DATA(lv_min) = CONV i( arg_value( it_args = it_args iv_name = `min` iv_default = `4` ) ).
+    DATA(lv_core) = lv_raw.
+    SHIFT lv_core LEFT DELETING LEADING `0`.
+    DATA(lv_sig) = strlen( lv_core ).
+    IF lv_sig = 0.
+      ev_fired  = abap_true.
+      ev_detail = `account is all zeros`.
+    ELSEIF lv_sig < lv_min.
+      ev_fired  = abap_true.
+      ev_detail = |only { lv_sig } significant digit(s) after removing zero |
+               && |padding — a real US account has at least { lv_min }|.
+    ENDIF.
   ENDMETHOD.
 
 ENDCLASS.

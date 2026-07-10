@@ -4,6 +4,7 @@
     "exclude": [
       "zcl_mdmdoc_mdg_reader\\.clas\\.abap$",
       "zcl_mdmdoc_mdg_map\\.clas\\.abap$",
+      "zcl_mdmdoc_mdg_check\\.clas\\.abap$",
       "zcl_mdmdoc_onboard\\.clas\\.abap$",
       "zcl_mdg_bp_field_derr_val\\.clas\\.abap$",
       "zmdmdoc_mdg_discover\\.prog\\.abap$",

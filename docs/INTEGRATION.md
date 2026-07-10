@@ -1,185 +1,205 @@
-# Интеграция ZMDMDOC в SAP — пошаговая инструкция и зависимости
+# Integrating ZMDMDOC into SAP — step-by-step guide and dependencies
 
-Документ описывает, как установить ABAP-клон валидатора (`ZMDMDOC`) в систему SAP,
-какие стандартные компоненты для этого нужны, как настроить опциональный вызов Ollama,
-и как встроить программу в фоновые задания / вызывать её из другого кода.
+> Русская версия: [INTEGRATION.ru.md](INTEGRATION.ru.md)
 
-Целевая среда: **on-premise SAP, ABAP ≥ 7.50** (ECC EhP8, S/4HANA любой версии, ABAP Platform).
-Не для BTP ABAP Environment (Steampunk) — там нет прямого доступа к файловой системе SAPGUI.
+This document describes how to install the ABAP clone of the validator (`ZMDMDOC`) into an SAP
+system, which standard components it needs, how to configure the optional Ollama call,
+and how to embed the program into background jobs / call it from other code.
 
----
-
-## 0. TL;DR — что нужно
-
-| Нужно | Обязательно? | Зачем |
-|---|---|---|
-| ABAP ≥ 7.50 | да | classic regex, синтаксис отчёта |
-| [abapGit](https://abapgit.org) | да | импорт исходников |
-| Ключ разработчика / транспорт | да (кроме `$TMP`) | создание Z-объектов |
-| Компонент **SAP_UI** (`/UI2/CL_JSON`) | почти всегда | LLM-вызовы, JSON-выгрузка, override правил |
-| Роль с S_GUI, S_DATASET, S_ICF | да | загрузка файлов + исходящий HTTP |
-| [Ollama](https://ollama.com) + модели | нет (опция) | извлечение полей LLM, чтение сканов |
-| Разрешение исходящего HTTP на app-сервере | только для Ollama | вызов `/api/chat` |
-
-Ядро (чтение PDF + regex-извлечение + правила + вердикт) работает **без** SAP_UI, без Ollama
-и без исходящего HTTP. Всё перечисленное с пометкой «опция» нужно только для LLM-режима.
+Target environment: **on-premise SAP, ABAP ≥ 7.50** (ECC EhP8, S/4HANA any release, ABAP Platform).
+Not for BTP ABAP Environment (Steampunk) — it has no direct access to the SAPGUI file system.
 
 ---
 
-## 1. Стандартные ABAP-зависимости (проверить наличие ДО импорта)
+## 0. TL;DR — what you need
 
-Все — стандартные классы SAP; в 7.50+ они есть практически всегда. Проверьте в SE24 / SE80,
-если система урезанная:
-
-| Класс / объект | Используется в | Комментарий |
+| What | Required? | Why |
 |---|---|---|
-| `/UI2/CL_JSON` | `ZCL_MDMDOC_LLM`, `ZCL_MDMDOC_RULES`, `ZCL_MDMDOC_REPORT` | компонент **SAP_UI** (стандарт с NW 7.40 SP08). Без него отключаются LLM, JSON-выгрузка, JSON-override правил — ядро работает |
-| `CL_ABAP_GZIP` | `ZCL_MDMDOC_PDF` | инфляция FlateDecode-потоков PDF. **Проверить первым** (см. §7) |
-| `CL_ABAP_ZIP` | `ZCL_MDMDOC_FILE`, `ZCL_MDMDOC_PDF` | распаковка `.zip`-контейнеров, fallback-инфляция |
-| `CL_ABAP_MESSAGE_DIGEST` | `ZCL_MDMDOC_FILE` | SHA-256 → run id документа |
-| `CL_HTTP_CLIENT` (`CREATE_BY_URL`) | `ZCL_MDMDOC_LLM` | вызовы Ollama `/api/tags`, `/api/chat` |
-| `CL_HTTP_UTILITY` | `ZCL_MDMDOC_LLM`, `ZCL_MDMDOC_FILE` | base64 encode/decode (vision-картинки, вложения `.eml`) |
-| `CL_GUI_FRONTEND_SERVICES` | `ZMDMDOC`, `ZCL_MDMDOC_FILE` | выбор/загрузка файла с ПК, выгрузка JSON |
+| ABAP ≥ 7.50 | yes | classic regex, report syntax |
+| [abapGit](https://abapgit.org) | yes | source import |
+| Developer key / transport | yes (except `$TMP`) | creating Z-objects |
+| Component **SAP_UI** (`/UI2/CL_JSON`) | almost always | LLM calls, JSON export, rules override |
+| Role with S_GUI, S_DATASET, S_ICF | yes | file upload + outbound HTTP |
+| [Ollama](https://ollama.com) + models | no (optional) | LLM field extraction, reading scans |
+| Outbound HTTP allowed on the app server | Ollama only | calling `/api/chat` |
+
+The core (PDF reading + regex extraction + rules + verdict) works **without** SAP_UI, without
+Ollama and without outbound HTTP. Everything marked "optional" is needed only for LLM mode.
+
+---
+
+## 1. Standard ABAP dependencies (check availability BEFORE the import)
+
+All of these are standard SAP classes; on 7.50+ they are practically always present. Check in
+SE24 / SE80 if your system is stripped down:
+
+| Class / object | Used in | Comment |
+|---|---|---|
+| `/UI2/CL_JSON` | `ZCL_MDMDOC_LLM`, `ZCL_MDMDOC_RULES`, `ZCL_MDMDOC_REPORT` | component **SAP_UI** (standard since NW 7.40 SP08). Without it LLM, JSON export and the JSON rules override are disabled — the core still works |
+| `CL_ABAP_GZIP` | `ZCL_MDMDOC_PDF` | inflating FlateDecode PDF streams. **Check this first** (see §7) |
+| `CL_ABAP_ZIP` | `ZCL_MDMDOC_FILE`, `ZCL_MDMDOC_PDF` | unpacking `.zip` containers, fallback inflation |
+| `CL_ABAP_MESSAGE_DIGEST` | `ZCL_MDMDOC_FILE` | SHA-256 → document run id |
+| `CL_HTTP_CLIENT` (`CREATE_BY_URL`) | `ZCL_MDMDOC_LLM` | Ollama calls `/api/tags`, `/api/chat` |
+| `CL_HTTP_UTILITY` | `ZCL_MDMDOC_LLM`, `ZCL_MDMDOC_FILE` | base64 encode/decode (vision images, `.eml` attachments) |
+| `CL_GUI_FRONTEND_SERVICES` | `ZMDMDOC`, `ZCL_MDMDOC_FILE` | picking/uploading a file from the PC, JSON download |
 | `CL_ABAP_CONV_IN_CE` / `CL_ABAP_CODEPAGE` | `ZCL_MDMDOC_FILE`, `ZCL_MDMDOC_PDF` | xstring ↔ string (UTF-8 / Latin-1) |
-| `CL_ABAP_REGEX` / `FIND REGEX` | `ZCL_MDMDOC_REGEX`, `ZCL_MDMDOC_RULES` | classic regex (**не PCRE** — совместимость с 7.50) |
+| `CL_ABAP_REGEX` / `FIND REGEX` | `ZCL_MDMDOC_REGEX`, `ZCL_MDMDOC_RULES` | classic regex (**not PCRE** — 7.50 compatibility) |
 
-Внешних Z-зависимостей нет: пакет самодостаточен. Единственная внутренняя зависимость —
-интерфейс `ZIF_MDMDOC_TYPES` (входит в пакет) и сгенерированный класс `ZCL_MDMDOC_RULES_DATA`.
+There are no external Z-dependencies: the package is self-contained. The only internal
+dependencies are the interface `ZIF_MDMDOC_TYPES` (part of the package) and the generated class
+`ZCL_MDMDOC_RULES_DATA`.
 
-> **Проверка одной командой** (SE38 → создать временный отчёт или использовать консоль):
-> убедитесь, что классы `/UI2/CL_JSON`, `CL_ABAP_GZIP`, `CL_ABAP_ZIP` открываются в SE24.
-> Если `/UI2/CL_JSON` отсутствует — доустановите компонент SAP_UI или используйте систему
-> в детерминированном режиме (без LLM/JSON).
-
----
-
-## 2. Импорт через abapGit
-
-### 2.1. Предварительно
-1. Установите abapGit (отчёт `ZABAPGIT_STANDALONE` или полная версия) — https://abapgit.org.
-2. Для онлайн-режима: настройте SSL для github.com в **STRUST** (SSL client SSL Client (Standard))
-   и включите сервис в **SICF** при необходимости. Для offline-режима SSL не нужен.
-3. Создайте пакет назначения:
-   - SE80 → правый клик → Create → Package → **`ZMDMDOC`** (или ваш Z-неймспейс);
-   - Software Component `HOME` / `LOCAL`, назначьте транспортный слой при переносе между системами;
-   - для локальных тестов допустим `$TMP` (без транспорта).
-
-### 2.2. Онлайн-импорт (если есть доступ к репозиторию по HTTPS)
-1. abapGit → **New Online** → URL репозитория → Package `ZMDMDOC` → Branch `main`.
-2. **Pull** → abapGit создаст все объекты пакета.
-3. Активируйте всё: SE80 → пакет `ZMDMDOC` → Activate all (или Ctrl+F3 по объектам).
-
-### 2.3. Offline-импорт (ZIP)
-1. Заархивируйте содержимое репозитория (папка `src/` обязательна; `.abapgit.xml` в корне).
-   Проще: `git archive` или скачать ZIP с git-хостинга.
-2. abapGit → **New Offline** → Package `ZMDMDOC` → **Import ZIP** → выберите архив.
-3. **Pull** → активируйте все объекты.
-
-### 2.4. Что появится в системе
-- 1 программа: `ZMDMDOC` (executable report).
-- 1 интерфейс: `ZIF_MDMDOC_TYPES`.
-- 12 классов: `ZCL_MDMDOC_FILE / _PDF / _SNIFF / _REGEX / _LLM / _EXTRACT / _RULES /
-  _RULES_DATA / _VERDICT / _MASK / _NORM / _REPORT`.
-- Класс сообщений (если добавлен) `ZMDMDOC` для текстов вердикта.
-
-### 2.5. Проверка после импорта
-1. SE80 → пакет → выделить все классы → **Run → Unit Tests** (Ctrl+Shift+F10).
-   Все тесты `HARMLESS/SHORT`, без сети и файлов — должны пройти зелёными.
-2. SA38 → `ZMDMDOC` → должен открыться selection screen без синтаксических ошибок.
+> **One-shot check** (SE38 → create a throwaway report or use the console):
+> make sure the classes `/UI2/CL_JSON`, `CL_ABAP_GZIP`, `CL_ABAP_ZIP` open in SE24.
+> If `/UI2/CL_JSON` is missing — install the SAP_UI component, or use the system
+> in deterministic mode (without LLM/JSON).
 
 ---
 
-## 3. Авторизации (роль для пользователя-оператора)
+## 2. Import via abapGit
 
-Минимальный набор объектов авторизации (PFCG-роль):
+### 2.1. Prerequisites
+1. Install abapGit (report `ZABAPGIT_STANDALONE` or the full version) — https://abapgit.org.
+2. For online mode: configure SSL for github.com in **STRUST** (SSL client SSL Client (Standard))
+   and enable the service in **SICF** if needed. Offline mode needs no SSL.
+3. Create the target package:
+   - SE80 → right-click → Create → Package → **`ZMDMDOC`** (or your Z-namespace);
+   - Software Component `HOME` / `LOCAL`, assign a transport layer when moving between systems;
+   - for local tests `$TMP` is acceptable (no transport).
 
-| Объект | Значения | Зачем |
+### 2.2. Online import (if the repository is reachable over HTTPS)
+1. abapGit → **New Online** → repository URL → Package `ZMDMDOC` → Branch `main`.
+2. **Pull** → abapGit creates all package objects.
+3. Activate everything: SE80 → package `ZMDMDOC` → Activate all (or Ctrl+F3 on the objects).
+
+### 2.3. Offline import (ZIP)
+1. Zip the repository contents (the `src/` folder is mandatory; `.abapgit.xml` in the root).
+   Easiest: `git archive`, or download the ZIP from your git hosting.
+2. abapGit → **New Offline** → Package `ZMDMDOC` → **Import ZIP** → pick the archive.
+3. **Pull** → activate all objects.
+
+### 2.4. What appears in the system
+- Package `ZMDMDOC`.
+- 5 programs: `ZMDMDOC` (executable report — the validator itself), `ZMDMDOC_RULES` (view/export
+  the rules), `ZMDMDOC_SETUP` (all-in-one onboarding run, ch. 11), `ZMDMDOC_DOCTOR`
+  (pre-flight tests, ch. 11), `ZMDMDOC_MDG_DISCOVER` (MDG mapping discovery, ch. 12).
+- 2 interfaces: `ZIF_MDMDOC_TYPES`, `ZIF_MDMDOC_SAP_READER`.
+- 20 classes:
+  - 13 core validator classes: `ZCL_MDMDOC_FILE / _PDF / _SNIFF / _REGEX / _LLM / _EXTRACT /
+    _RULES / _VERDICT / _MASK / _NORM / _REPORT / _COMPARE / _SAP_MANUAL`;
+  - 2 generated: `ZCL_MDMDOC_RULES_DATA` (the rules from YAML), `ZCL_MDMDOC_GOLDEN_DATA`
+    (golden corpus of test data);
+  - 5 MDG-scenario classes: `ZCL_MDMDOC_MDG_READER`, `ZCL_MDMDOC_MDG_MAP`, `ZCL_MDMDOC_ONBOARD`,
+    `ZCL_MDG_BP_FIELD_DERR_VAL`, `ZCL_MDMDOC_SELFTEST`.
+- Message class (if added) `ZMDMDOC` for the verdict texts.
+
+### 2.5. Post-import check
+
+**Activation.** On a system with MDG all package objects activate. On a system **without MDG**
+(plain ECC / S/4 without MDG) 7 objects reference USMD types and **will not activate**:
+`ZCL_MDMDOC_MDG_READER`, `ZCL_MDMDOC_MDG_MAP`, `ZCL_MDMDOC_ONBOARD`,
+`ZCL_MDG_BP_FIELD_DERR_VAL`, `ZMDMDOC_SETUP`, `ZMDMDOC_DOCTOR`, `ZMDMDOC_MDG_DISCOVER`.
+This is expected: leave them inactive or delete them. The validator core (`ZMDMDOC` +
+`ZMDMDOC_RULES` + the 13 core classes + the generated data classes + `ZCL_MDMDOC_SELFTEST`)
+activates and works fully without them.
+
+1. SE80 → package → select all classes → **Run → Unit Tests** (Ctrl+Shift+F10).
+   All tests are `HARMLESS/SHORT`, no network or files — they must pass green.
+2. SA38 → `ZMDMDOC` → the selection screen must open with no syntax errors.
+
+---
+
+## 3. Authorizations (role for the operator user)
+
+Minimal set of authorization objects (PFCG role):
+
+| Object | Values | Why |
 |---|---|---|
-| `S_TCODE` | `SA38` (или своя Z-транзакция, см. §4) | запуск отчёта |
-| `S_GUI` | ACTVT `61` (Upload/Download) | чтение файла с ПК, выгрузка JSON |
-| `S_DATASET` | PROGRAM `ZMDMDOC*`, ACTVT `33`(read)/`34`(write), фильтр по путям | режим «сервер приложений» (`OPEN DATASET`) |
-| `S_ICF` | ICF_FIELD `SERVICE`, значение — по вашей политике исходящего HTTP | вызовы Ollama (только LLM-режим) |
-| `S_DEVELOP` | только на dev-системе | активация/юнит-тесты |
+| `S_TCODE` | `SA38` (or your own Z-transaction, see §4) | running the report |
+| `S_GUI` | ACTVT `61` (Upload/Download) | reading a file from the PC, JSON download |
+| `S_DATASET` | PROGRAM `ZMDMDOC*`, ACTVT `33`(read)/`34`(write), path filter | "application server" mode (`OPEN DATASET`) |
+| `S_ICF` | ICF_FIELD `SERVICE`, value per your outbound-HTTP policy | Ollama calls (LLM mode only) |
+| `S_DEVELOP` | dev system only | activation / unit tests |
 
-Если LLM не используется — `S_ICF` не нужен. Если файлы только с ПК — `S_DATASET` можно
-не выдавать (радио «сервер приложений» тогда просто не сработает — это ожидаемо).
+If LLM is not used — `S_ICF` is not needed. If files come only from the PC — `S_DATASET` can be
+withheld (the "application server" radio button simply won't work then — that is expected).
 
 ---
 
-## 4. (Опционально) Своя транзакция вместо SA38
+## 4. (Optional) Own transaction instead of SA38
 
-Чтобы операторы не имели широкого `SA38`:
-1. SE93 → создать транзакцию **`ZMDMDOC`** → тип «Program and selection screen (report transaction)»
+So that operators do not need broad `SA38` access:
+1. SE93 → create transaction **`ZMDMDOC`** → type "Program and selection screen (report transaction)"
    → Program `ZMDMDOC`.
-2. Выдать в роли `S_TCODE` = `ZMDMDOC` вместо `SA38`.
+2. In the role grant `S_TCODE` = `ZMDMDOC` instead of `SA38`.
 
 ---
 
-## 5. (Опционально) Настройка исходящего HTTP к Ollama
+## 5. (Optional) Configuring outbound HTTP to Ollama
 
-Нужно **только** если включаете LLM-режим (извлечение полей моделью и чтение сканов).
+Needed **only** if you enable LLM mode (model-based field extraction and reading scans).
 
-### 5.1. Где должен работать Ollama
-`CL_HTTP_CLIENT=>CREATE_BY_URL` открывает соединение **с сервера приложений SAP**, а не с ПК
-оператора. Поэтому URL должен быть доступен именно серверу приложений:
-- Ollama на том же хосте, что и app-сервер (напр. локальный ABAP Developer Trial в Docker):
+### 5.1. Where Ollama must run
+`CL_HTTP_CLIENT=>CREATE_BY_URL` opens the connection **from the SAP application server**, not from
+the operator's PC. So the URL must be reachable from the application server itself:
+- Ollama on the same host as the app server (e.g. a local ABAP Developer Trial in Docker):
   `http://localhost:11434`.
-- Ollama на другом хосте в сети: запустить как `OLLAMA_HOST=0.0.0.0 ollama serve`,
-  URL `http://<хост-или-IP>:11434`.
+- Ollama on another host in the network: start it as `OLLAMA_HOST=0.0.0.0 ollama serve`,
+  URL `http://<host-or-IP>:11434`.
 
-### 5.2. Модели
+### 5.2. Models
 ```bash
-ollama pull qwen3:4b        # текстовая модель — извлечение полей из текста документа
-ollama pull qwen2.5vl:7b    # vision — транскрипция картинок-сканов (.png/.jpg)
+ollama pull qwen3:4b        # text model — extracts fields from document text
+ollama pull qwen2.5vl:7b    # vision — transcribes scanned images (.png/.jpg)
 ```
 
 ### 5.3. HTTP vs HTTPS
-- **Обычный HTTP** (`http://…:11434`): дополнительная настройка не нужна — это исходящий вызов,
-  **SM59-назначение и SICF-сервис не требуются**. Достаточно сетевой доступности и `S_ICF`.
-- **HTTPS**: сертификат CA эндпоинта нужно добавить в **STRUST** → «SSL client SSL Client (Standard)»
-  (или в тот PSE, что использует ваш профиль), иначе рукопожатие TLS упадёт.
+- **Plain HTTP** (`http://…:11434`): no extra setup — this is an outbound call,
+  **no SM59 destination and no SICF service are required**. Network reachability and `S_ICF` are enough.
+- **HTTPS**: the endpoint's CA certificate must be added to **STRUST** → "SSL client SSL Client (Standard)"
+  (or whichever PSE your profile uses), otherwise the TLS handshake fails.
 
-### 5.4. Прокси
-Если исходящий трафик идёт через корпоративный прокси — задайте его в вызове
-`CREATE_BY_URL( proxy_host = … proxy_service = … )`. В текущей версии параметры прокси пустые
-(прямое соединение). Если нужен прокси — это единственная точка правки в `ZCL_MDMDOC_LLM`
-(метод создания клиента); вынесено намеренно узко.
+### 5.4. Proxy
+If outbound traffic goes through a corporate proxy — set it in the
+`CREATE_BY_URL( proxy_host = … proxy_service = … )` call. In the current version the proxy
+parameters are empty (direct connection). If a proxy is needed — this is the single place to
+change in `ZCL_MDMDOC_LLM` (the client-creation method); deliberately kept narrow.
 
-### 5.5. Проверка доступности
-На selection screen включите флажок LLM и укажите URL. Программа сначала делает `GET /api/tags`
-(таймаут 5 с). Если Ollama недоступен — вы получите finding `LLM-001` и программа продолжит
-в детерминированном режиме (regex-only). То есть неверная настройка HTTP **не ломает** работу,
-а деградирует до режима без модели.
+### 5.5. Availability check
+On the selection screen tick the LLM checkbox and enter the URL. The program first performs
+`GET /api/tags` (5 s timeout). If Ollama is unreachable — you get finding `LLM-001` and the program
+continues in deterministic mode (regex-only). In other words, a wrong HTTP setup **does not break**
+the run, it degrades to model-free mode.
 
 ---
 
-## 6. Встраивание в процессы
+## 6. Embedding into processes
 
-### 6.1. Фоновое задание (SM36/SM37)
-1. Создайте вариант отчёта `ZMDMDOC` (файл — с **сервера приложений**, т.к. в фоне нет ПК-сессии;
-   радио «сервер приложений» + путь на прикладном сервере).
-2. Для фона включите флажок «строгий режим»: при вердикте REJECT программа выдаёт `MESSAGE TYPE 'E'`
-   → задание переходит в статус **Canceled** (машиночитаемый аналог «exit code 1» Python-версии).
-   При ACCEPT/WARNING задание завершается успешно.
-3. Статус задания в SM37 и есть «код возврата» для планировщика.
+### 6.1. Background job (SM36/SM37)
+1. Create a variant of report `ZMDMDOC` (file — from the **application server**, since there is no
+   PC session in background; "application server" radio + a path on the application server).
+2. For background runs enable the "strict mode" checkbox: on a REJECT verdict the program issues
+   `MESSAGE TYPE 'E'` → the job goes to status **Canceled** (the machine-readable analogue of the
+   Python version's "exit code 1"). On ACCEPT/WARNING the job finishes successfully.
+3. The job status in SM37 is the "return code" for your scheduler.
 
-Соответствие exit-кодов Python-оригинала статусам SAP:
+Mapping of the Python original's exit codes to SAP statuses:
 
-| Python `mdmdoc` | ZMDMDOC (фон, строгий режим) |
+| Python `mdmdoc` | ZMDMDOC (background, strict mode) |
 |---|---|
-| 0 ACCEPT | задание Finished, MESSAGE S |
-| 1 REJECT | задание **Canceled** (MESSAGE E) |
-| 2 REVIEW/WARNING | задание Finished, MESSAGE «W» |
-| 3 LLM недоступен | finding `LLM-001`, задание Finished |
-| 4 нечитаемый документ | finding `EXT-001`/`EXT-002`, задание Finished |
+| 0 ACCEPT | job Finished, MESSAGE S |
+| 1 REJECT | job **Canceled** (MESSAGE E) |
+| 2 REVIEW/WARNING | job Finished, MESSAGE "W" |
+| 3 LLM unavailable | finding `LLM-001`, job Finished |
+| 4 unreadable document | finding `EXT-001`/`EXT-002`, job Finished |
 
-### 6.2. Вызов из другого ABAP-кода
+### 6.2. Calling from other ABAP code
 ```abap
 SUBMIT zmdmdoc
   WITH p_file  = '/interface/in/vendor_bank_letter.pdf'
-  WITH rb_srv  = abap_true       " файл с сервера приложений
-  WITH rb_auto = abap_true       " автоопределение класса документа
-  WITH cb_llm  = abap_false      " детерминированный режим
+  WITH rb_srv  = abap_true       " file from the application server
+  WITH rb_auto = abap_true       " document class auto-detection
+  WITH cb_llm  = abap_false      " deterministic mode
   AND RETURN.
 
 DATA lv_verdict TYPE string.
@@ -188,349 +208,415 @@ IMPORT verdict = lv_verdict
        json    = lv_json
   FROM MEMORY ID 'ZMDMDOC_RESULT'.
 " lv_verdict ∈ { ACCEPT | REJECT | WARNING | NEED_MANUAL_REVIEW }
-" lv_json    = отчёт в формате mdmdoc.v1 (при cb_json = abap_true)
+" lv_json    = report in mdmdoc.v1 format (when cb_json = abap_true)
 ```
 
-### 6.3. Вызов классов напрямую (без экрана)
-Логика пайплайна вынесена в классы, отчёт лишь тонкая обёртка. Для полностью программного
-использования (например, из воркфлоу или RFC-обёртки) вызывайте классы напрямую в порядке:
+### 6.3. Calling the classes directly (no screen)
+The pipeline logic lives in the classes; the report is only a thin wrapper. For fully programmatic
+use (e.g. from a workflow or an RFC wrapper) call the classes directly in this order:
 `ZCL_MDMDOC_FILE=>read` → `unwrap` → `ZCL_MDMDOC_PDF=>extract_text`
 → `ZCL_MDMDOC_SNIFF=>sniff_doc_class` → `ZCL_MDMDOC_REGEX=>extract_candidates`
-→ (опц.) `ZCL_MDMDOC_LLM->extract_fields` → `ZCL_MDMDOC_EXTRACT=>build`
+→ (opt.) `ZCL_MDMDOC_LLM->extract_fields` → `ZCL_MDMDOC_EXTRACT=>build`
 → `NEW ZCL_MDMDOC_RULES( )->run` → `ZCL_MDMDOC_VERDICT=>decide`
 → `ZCL_MDMDOC_REPORT=>build_list / build_json`.
-Точные сигнатуры — в [docs/CONTRACT.md](CONTRACT.md).
+Exact signatures — see [docs/CONTRACT.md](CONTRACT.md).
 
-### 6.4. RFC-обёртка для внешних систем (при необходимости)
-Если документ приходит из внешней системы (например, из middleware вместе с байтами файла),
-оберните вызов классов в RFC-enabled функциональный модуль: на вход `XSTRING` содержимого файла
-+ имя файла, на выход — вердикт и JSON. Это ~30 строк поверх существующих классов; в поставку
-не входит намеренно (у каждого ландшафта свой контракт интеграции), но архитектура к этому готова:
-`ZCL_MDMDOC_FILE` уже умеет принимать `xstring` напрямую в структуре `ty_doc`.
-
----
-
-## 7. Порядок проверки на целевой системе (риски)
-
-Проверяйте в этом порядке — от самого рискованного к стандартному:
-
-1. **`CL_ABAP_GZIP=>DECOMPRESS_BINARY` со zlib-потоками (RFC 1950).**
-   PDF использует FlateDecode = zlib, а не gzip. `ZCL_MDMDOC_PDF` пробует три стратегии инфляции
-   (прямая → срез zlib-заголовка + синтетический gzip-конверт → синтетический ZIP через
-   `CL_ABAP_ZIP`). Если на вашем ядре все три не срабатывают — читаются только PDF с несжатыми
-   потоками; обход в README (пере-экспорт PDF через «печать в PDF»). Проверьте на реальном
-   сжатом PDF в dev.
-2. **`/UI2/CL_JSON`** присутствует (компонент SAP_UI). Нет → LLM/JSON/override отключены,
-   ядро работает.
-3. **`CL_ABAP_ZIP`** — поведение при несовпадении CRC (для `.zip`-контейнеров и 3-й стратегии PDF).
-4. Остальное (`CL_ABAP_MESSAGE_DIGEST`, `CL_HTTP_CLIENT`, `CL_HTTP_UTILITY`,
-   `CL_GUI_FRONTEND_SERVICES`) — стандарт с 7.40, риск низкий.
+### 6.4. RFC wrapper for external systems (if needed)
+If the document arrives from an external system (e.g. from middleware together with the file
+bytes), wrap the class calls in an RFC-enabled function module: input — the `XSTRING` file content
++ the file name, output — the verdict and the JSON. That is ~30 lines on top of the existing
+classes; deliberately not part of the delivery (every landscape has its own integration contract),
+but the architecture is ready for it: `ZCL_MDMDOC_FILE` can already take an `xstring` directly in
+the `ty_doc` structure.
 
 ---
 
-## 8. Обновление правил после установки
+## 7. Verification order on the target system (risks)
 
-Полная инструкция — в [docs/RULES.md](RULES.md) (смотреть в SAP, менять, удалять, заменять «скилл»).
-Кратко:
+Verify in this order — from the riskiest item to the standard ones:
 
-- **Посмотреть в SAP:** отчёт `ZMDMDOC_RULES` (список всех правил + экспорт в JSON).
-- **Постоянное изменение** (с транспортом): правите `rules/banking.yaml` / `rules/w9.yaml`,
-  `python3 tools/gen_rules_abap.py`, abapGit Pull, активируете, переносите.
-- **Быстрая правка без транспорта**: `ZMDMDOC_RULES` → экспорт → правка файла → параметр
-  «rules override» (`p_rules`) отчёта `ZMDMDOC` → загрузка через `/UI2/CL_JSON`. Битый JSON →
-  предупреждение + откат на вшитые правила.
-- **Пер-класс «скилл»-swap:** каждый тип — отдельный набор. Файл `rules/w9.rules.json` (только
-  `rules_w9`) заменяет **лишь** W-9, банковский модуль остаётся дефолтным (и наоборот) — override
-  теперь частичный. Удобно «если что-то не так с одним типом — подменить только его пак».
-  Экспорт одного класса: `ZMDMDOC_RULES` с радио `W-9 only` / `Banking only`.
-
----
-
-## 9. Чек-лист внедрения
-
-- [ ] ABAP ≥ 7.50, abapGit установлен.
-- [ ] Пакет `ZMDMDOC` создан, транспортный слой назначен (или `$TMP` для теста).
-- [ ] `/UI2/CL_JSON`, `CL_ABAP_GZIP`, `CL_ABAP_ZIP` открываются в SE24.
-- [ ] Импорт через abapGit → активация всех объектов без ошибок.
-- [ ] Юнит-тесты пакета зелёные (Ctrl+Shift+F10).
-- [ ] `ZMDMDOC` запускается из SA38, экран открывается.
-- [ ] Роль оператора: `S_TCODE`, `S_GUI`, при серверных файлах `S_DATASET`, при LLM `S_ICF`.
-- [ ] (LLM) Ollama доступен **с сервера приложений**, модели `qwen3:4b` + `qwen2.5vl:7b` скачаны.
-- [ ] (LLM+HTTPS) сертификат CA в STRUST.
-- [ ] Smoke-тест: прогнать реальный `bank_letter.pdf` → получить вердикт; при включённом LLM —
-      прогнать скан `.png` → проверить транскрипцию.
-- [ ] (Фон) вариант с серверным путём + строгий режим → проверить статус в SM37.
+1. **`CL_ABAP_GZIP=>DECOMPRESS_BINARY` with zlib streams (RFC 1950).**
+   PDF uses FlateDecode = zlib, not gzip. `ZCL_MDMDOC_PDF` tries three inflation strategies
+   (direct → strip the zlib header + synthetic gzip envelope → synthetic ZIP via
+   `CL_ABAP_ZIP`). If all three fail on your kernel — only PDFs with uncompressed streams are
+   readable; the workaround is in the README (re-export the PDF via "print to PDF"). Test on a
+   real compressed PDF in dev.
+2. **`/UI2/CL_JSON`** is present (SAP_UI component). Missing → LLM/JSON/override are disabled,
+   the core works.
+3. **`CL_ABAP_ZIP`** — behaviour on a CRC mismatch (for `.zip` containers and PDF strategy 3).
+4. Everything else (`CL_ABAP_MESSAGE_DIGEST`, `CL_HTTP_CLIENT`, `CL_HTTP_UTILITY`,
+   `CL_GUI_FRONTEND_SERVICES`) — standard since 7.40, low risk.
 
 ---
 
-## 10. Встраивание в SAP MDG (сверка Change Request через BAdI)
+## 8. Updating the rules after installation
 
-Отдельный сценарий: не отдельный репорт, а **автоматическая проверка внутри MDG**. Пользователь
-создаёт клиента/вендора в Fiori как Change Request, прикладывает документ (bank letter / W-9) во
-вложение заявки. При проверке заявки система читает вложение, извлекает реквизиты, читает данные
-самого CR (имя, адрес, банк, налог) и **выдаёт warning** в логе сообщений заявки при расхождениях.
+The full guide is in [docs/RULES.md](RULES.md) (view in SAP, change, delete, swap a "skill").
+In short:
 
-### 10.1. Как это устроено
+- **View in SAP:** report `ZMDMDOC_RULES` (list of all rules + JSON export).
+- **Permanent change** (with transport): edit `rules/banking.yaml` / `rules/w9.yaml`,
+  `python3 tools/gen_rules_abap.py`, abapGit Pull, activate, transport.
+- **Governance-tier shipping profile:** the generator can filter by tier:
+  `python3 tools/gen_rules_abap.py --tier-min corp` emits only `tier: corp` rules
+  (dropping the experimental `BNK-002`, `BNK-030`). The **default** generation ships the full
+  set, including those two experimental rules, — a deliberate operator decision.
+  Rules without a tier tag always pass the filter.
+- **Quick fix without transport**: `ZMDMDOC_RULES` → export → edit the file → the
+  "rules override" parameter (`p_rules`) of report `ZMDMDOC` → loaded via `/UI2/CL_JSON`.
+  Broken JSON → warning + fallback to the built-in rules.
+- **Per-class "skill" swap:** each document type is a separate set. A file `rules/w9.rules.json`
+  (only `rules_w9`) replaces **only** W-9, the banking module stays default (and vice versa) —
+  the override is now partial. Handy when "one type misbehaves — swap only its pack".
+  Export of a single class: `ZMDMDOC_RULES` with the `W-9 only` / `Banking only` radio.
 
-Триггер — **BAdI `USMD_RULE_SERVICE`** (enhancement spot той же MDG-инфраструктуры валидаций),
-реализация в классе **`ZCL_MDG_BP_FIELD_DERR_VAL`** (`IF_EX_USMD_RULE_SERVICE`), фильтр по модели
-данных `BP`. Поток (метод `CHECK_ENTITY`, срабатывает один раз — guard на якорную сущность
-`BP_BANKDT`):
+---
 
-1. `ZCL_MDMDOC_MDG_READER( io_model, i_crequest )`.
-2. `read_cr_attachments` → байты вложения(й) CR (через GOS на объекте заявки).
-3. `read_cr_fields` → данные CR через `io_model->read_entity_data_all` по сущностям
-   (имя/адрес/банк/налог), маппинг в SAP_KEYS.
-4. Для PDF-вложения: `ZCL_MDMDOC_PDF=>extract_text` → sniff → `ZCL_MDMDOC_REGEX` →
-   `ZCL_MDMDOC_EXTRACT` (**LLM выключен** — BAdI синхронный, без внешнего HTTP; только быстрый
-   детерминированный путь).
+## 9. Implementation checklist
+
+- [ ] ABAP ≥ 7.50, abapGit installed.
+- [ ] Package `ZMDMDOC` created, transport layer assigned (or `$TMP` for testing).
+- [ ] `/UI2/CL_JSON`, `CL_ABAP_GZIP`, `CL_ABAP_ZIP` open in SE24.
+- [ ] Import via abapGit → activation without errors (on a system without MDG the 7 MDG objects
+      do not activate — that is expected, see §2.5).
+- [ ] Package unit tests green (Ctrl+Shift+F10).
+- [ ] `ZMDMDOC` starts from SA38, the screen opens.
+- [ ] Operator role: `S_TCODE`, `S_GUI`, `S_DATASET` for server-side files, `S_ICF` for LLM.
+- [ ] (LLM) Ollama reachable **from the application server**, models `qwen3:4b` + `qwen2.5vl:7b` pulled.
+- [ ] (LLM+HTTPS) CA certificate in STRUST.
+- [ ] Smoke test: run a real `bank_letter.pdf` → get a verdict; with LLM enabled —
+      run a `.png` scan → check the transcription.
+- [ ] (Background) variant with a server path + strict mode → check the status in SM37.
+
+---
+
+## 10. Embedding into SAP MDG (Change Request cross-check via BAdI)
+
+A separate scenario: not a standalone report, but an **automatic check inside MDG**. The user
+creates a customer/vendor in Fiori as a Change Request and attaches a document (bank letter / W-9)
+to the request. When the request is checked, the system reads the attachment, extracts the details,
+reads the CR's own data (name, address, bank, tax) and **raises a warning** in the request's
+message log on mismatches.
+
+### 10.0. Two facts verified in the system (they drive the whole design)
+
+Checked on **MDQ/100** (SE18 / SE24) — do not "improve" the design without re-checking these:
+
+1. **BAdI `USMD_RULE_SERVICE` is NOT Multiple Use.** In SE18 → Enh. Spot Element Definitions →
+   Usability, `Multiple Use` is **unchecked** (Instance Creation Mode = *Reusing Instantiation*).
+   For one filter value only **one** implementation runs, and the `BP` model slot is normally
+   already taken (e.g. `ZCLMDG_GTS_BP_VALIDATION`). → **Do not add a competing implementation.**
+   Call our service from the existing one (see 10.5).
+2. **`CHECK_CREQUEST_FINAL` is the right hook, not `CHECK_ENTITY`.** Verified signatures
+   (SE24 `IF_EX_USMD_RULE_SERVICE` → Methods → Parameters):
+
+   | method | importing | messages |
+   |---|---|---|
+   | `CHECK_CREQUEST_FINAL` (fires **once** per CR) | `id_edition`, `id_crequest`, `io_model`, `id_log_handle` | **no `et_message`** — write to the application log (BAL) via `id_log_handle` |
+   | `CHECK_ENTITY` (fires per entity type **and** per record) | `io_model`, `id_edition`, `id_crequest`(opt), `id_entitytype`, `if_online_check`, `it_data` | `et_message TYPE usmd_t_message` |
+
+   The interface has **11 methods** (`CHECK_ENTITY`, `CHECK_ENTITY_HIERARCHY`,
+   `CHECK_CREQUEST_START`, `CHECK_CREQUEST`, `CHECK_CREQUEST_HIERARCHY`, `CHECK_CREQUEST_FINAL`,
+   `CHECK_EDITION_START`, `CHECK_EDITION`, `CHECK_EDITION_HIERARCHY`, `CHECK_EDITION_FINAL`,
+   `DERIVE_ENTITY`) — all must exist for a class to activate.
+
+### 10.1. How it works
+
+All the work lives in the plain service class **`ZCL_MDMDOC_MDG_CHECK`** (deliberately *not* a BAdI
+implementation, see 10.0). It is called once per change request from
+`IF_EX_USMD_RULE_SERVICE~CHECK_CREQUEST_FINAL`:
+
+1. `ZCL_MDMDOC_MDG_READER( io_model, id_crequest )`.
+2. `read_cr_attachments` → bytes of the CR attachment(s) (via GOS on the request object).
+3. `read_cr_fields` → CR data via `io_model->read_entity_data_all` over the entities
+   (name/address/bank/tax), mapped to SAP_KEYS through `ZCL_MDMDOC_MDG_MAP`.
+4. For a PDF attachment: `ZCL_MDMDOC_PDF=>extract_text` → sniff → `ZCL_MDMDOC_REGEX` →
+   `ZCL_MDMDOC_EXTRACT` (**LLM is off** — the BAdI is synchronous, no external HTTP; only the fast
+   deterministic path). The parsed document is **cached by attachment SHA** because the BAdI runs
+   under *Reusing Instantiation* and check methods may fire several times per session.
 5. `ZCL_MDMDOC_COMPARE=>compare( doc, cr )` → findings `SAP-000..008`.
-6. Findings → сообщения заявки: `WARNING` (`W`); REJECT-findings можно поднимать как `E`
-   (блокирует submit). `SAP-000` (всё совпало) не выводится.
+6. Findings → **application log** via `BAL_LOG_MSG_ADD` (message class `ZMDMDOC`, no. `001`).
+   Everything is `W` by default; only with `iv_block = abap_true` does a REJECT finding become `E`.
+   `SAP-000` (everything matched) is not shown.
 
-Логика сравнения полностью переиспользует ядро; MDG-специфика сосредоточена в двух классах
-(`ZCL_MDMDOC_MDG_READER`, `ZCL_MDG_BP_FIELD_DERR_VAL`).
+The comparison logic fully reuses the core; the MDG specifics are concentrated in
+`ZCL_MDMDOC_MDG_CHECK` + `ZCL_MDMDOC_MDG_READER` (+ the optional reference BAdI class).
 
-### 10.2. Предпосылки
+### 10.2. Prerequisites
 
-- SAP MDG активен, модель данных **`BP`** (MDG-BP / MDG-Customer / MDG-Supplier).
-- Базовые классы ZMDMDOC установлены и активированы (главы 1–2).
-- Класс сообщений **`ZMDMDOC`** (SE91), сообщение `001` с текстом `&1&2&3&4` (текст finding'а
-  переносится в MSGV1..MSGV4).
+- SAP MDG active, data model **`BP`** (MDG-BP / MDG-Customer / MDG-Supplier).
+- The base ZMDMDOC classes installed and activated (chapters 1–2).
+- Message class **`ZMDMDOC`** (SE91), message `001` with text `&1&2&3&4` (the finding text is
+  carried in MSGV1..MSGV4).
 
-### 10.3. Что подтвердить на dev-системе (VERIFY ON SYSTEM)
+### 10.3. What to confirm on the dev system (VERIFY ON SYSTEM)
 
-Два MDG-класса намеренно **исключены из офлайн-проверки abaplint** (используют типы фреймворка MDG,
-которых нет вне системы) и помечены в коде. Перед активацией сверьте на своей системе:
+The MDG classes are deliberately **excluded from the offline abaplint check** (they use MDG
+framework types that do not exist outside the system) and are marked in the code.
 
-1. **Сигнатуру `IF_EX_USMD_RULE_SERVICE~CHECK_ENTITY`** — точные имена/типы параметров
-   (`io_model` / `i_crequest` / `i_fieldname` / `ct_message`) и способ возврата сообщений. Метод
-   реализации наследует сигнатуру от интерфейса — при расхождении имён поправьте обращения.
-2. **Тип `io_model`** (`if_usmd_model_ext` vs иной) и точный вызов `read_entity_data_all` /
-   `create_data_reference` (имена структур-констант).
-3. **Технические имена сущностей и полей** модели `BP` (таблица маппинга ниже) — из
-   MDGIMG → «Обработка модели данных» / tx `USMD_ENTITY`. У разных клиентов имена различаются.
-4. **API вложений CR** — объектный тип заявки для GOS (`USMD_CREQ` в шаблоне) и класс
-   `CL_GOS_API` (или альтернативу на вашем релизе). Метод написан как шаблон с graceful-fallback:
-   если API недоступен — вернёт ошибку, а не дамп.
+Already verified on MDQ/100 (see 10.0), no longer open: the `Multiple Use` flag, the type of
+`io_model` (`IF_USMD_MODEL_EXT`), and the signatures of `CHECK_CREQUEST_FINAL` / `CHECK_ENTITY`.
 
-### 10.4. Маппинг MDG-BP → SAP_KEYS (подтвердить)
+Still to confirm before activation:
 
-| SAP_KEY | Сущность (`read_entity_data_all`) | Поле |
+1. **Which implementation owns the `BP` filter value** — SE18 → `USMD_RULE_SERVICE` →
+   `Implementations`. That is the class you paste the call-in into (10.5).
+2. **The technical names of the entities and fields** of model `BP` (mapping table below) — from
+   MDGIMG → "Edit Data Model" / tx `USMD_ENTITY`. Names differ between customers. Use
+   `ZMDMDOC_MDG_DISCOVER` (chapter 12) to derive them automatically.
+3. **The CR attachment API** — the request object type for GOS (`USMD_CREQ` in the template) and
+   the class `CL_GOS_API` (or its alternative on your release). The method is written as a template
+   with a graceful fallback: if the API is unavailable it returns an error, not a dump.
+4. **Whether an `E` message in `CHECK_CREQUEST_FINAL`'s application log blocks the request.**
+   The default is `W` only (`iv_block = abap_false`), so this is not on the critical path.
+
+> The same enhancement spot also contains a second BAdI, `USMD_RULE_SERVICE_CROSS_ET`
+> (interface `IF_EX_USMD_RULE_SERVICE2`, cross-entity-type validations). If its `Multiple Use` flag
+> is set, it is an alternative home for this check that needs no call-in into a foreign class.
+
+### 10.4. MDG-BP → SAP_KEYS mapping (to confirm)
+
+| SAP_KEY | Entity (`read_entity_data_all`) | Field |
 |---|---|---|
-| account_holder / account_name | BP_CENTRL (или BP_HEADER) | NAME_ORG1(+2) / NAME_FIRST+LAST |
+| account_holder / account_name | BP_CENTRL (or BP_HEADER) | NAME_ORG1(+2) / NAME_FIRST+LAST |
 | street / city | ADDRESS | STREET / CITY1 |
 | bank_country | BP_BANKDT | BANKS |
 | bank_key | BP_BANKDT | BANKL |
 | bank_account | BP_BANKDT | BANKN |
 | control_key | BP_BANKDT | BKONT |
-| iban | BP_IBAN (или BP_BANKDT) | IBAN |
-| bank_name / swift_bic | из BANKS+BANKL → BNKA (active) | BANKA / SWIFT |
+| iban | BP_IBAN (or BP_BANKDT) | IBAN |
+| bank_name / swift_bic | from BANKS+BANKL → BNKA (active) | BANKA / SWIFT |
 | tin (US) | BP_TAXNUM | TAXTYPE (US1/US2) + TAXNUM |
 
-### 10.5. Установка BAdI-реализации
+### 10.5. Installing — the call-in (recommended, because the BAdI is not Multiple Use)
 
-1. Активировать базовый пакет ZMDMDOC (главы 1–2), включая `ZCL_MDMDOC_COMPARE`,
-   `ZCL_MDMDOC_MDG_READER`, `ZCL_MDG_BP_FIELD_DERR_VAL`.
-2. SE91 → класс сообщений `ZMDMDOC`, сообщение `001` = `&1&2&3&4`.
-3. SE18/SE19 (или MDGIMG → BAdI валидаций/деривации) → enhancement spot `USMD_RULE_SERVICE` →
-   создать реализацию → класс `ZCL_MDG_BP_FIELD_DERR_VAL`, **фильтр `USMD_MODEL = 'BP'`**,
-   активировать.
-4. (При необходимости) сверить/поправить имена сущностей-констант в `ZCL_MDMDOC_MDG_READER`
-   (`c_ent_*`) и якорную сущность `c_anchor_entity` в `ZCL_MDG_BP_FIELD_DERR_VAL` под вашу модель.
+1. Activate the base ZMDMDOC package (chapters 1–2), including `ZCL_MDMDOC_COMPARE`,
+   `ZCL_MDMDOC_MDG_READER`, `ZCL_MDMDOC_MDG_CHECK`.
+2. SE91 → message class `ZMDMDOC`, message `001` = `&1&2&3&4`.
+3. SE18 → `USMD_RULE_SERVICE` → `Implementations` → find the class that owns the `BP` filter value
+   (e.g. `ZCLMDG_GTS_BP_VALIDATION`). Open it in SE24 and paste **two lines** into its
+   `IF_EX_USMD_RULE_SERVICE~CHECK_CREQUEST_FINAL` method:
 
-### 10.6. Авторизации и производительность
+   ```abap
+   METHOD if_ex_usmd_rule_service~check_crequest_final.
+     NEW zcl_mdmdoc_mdg_check( )->run_cr_check(
+       io_model      = io_model
+       id_crequest   = id_crequest
+       id_log_handle = id_log_handle ).
+   ENDMETHOD.
+   ```
 
-- Работает в контексте сессии MDG-заявки — **дополнительный RFC/HTTP не нужен** (в MDG-пути LLM
-  отключён; сеть не задействуется). Чтение вложений/сущностей идёт под правами пользователя заявки.
-- Парсинг PDF + regex — миллисекунды. Запуск ограничен якорной сущностью и только PDF-вложениями,
-  чтобы не замедлять каждый check.
+   Nothing else in that class changes. Activate.
+4. Run `ZMDMDOC_MDG_DISCOVER` (chapter 12) to derive the real entity/field mapping into
+   `ZMDMDOC_MAP`, then `ZMDMDOC_DOCTOR` with a test CR number to prove reading works.
 
-### 10.7. Где виден результат
+**Only if the `BP` slot is free** you may instead activate the bundled reference implementation
+`ZCL_MDG_BP_FIELD_DERR_VAL` (it implements all 11 interface methods and delegates from
+`CHECK_CREQUEST_FINAL` to the same service). Do not activate it when another implementation already
+holds the filter value — the BAdI is not Multiple Use.
 
-Warning'и появляются в **логе сообщений Change Request** (Fiori «Мои заявки» / UI заявки).
-`W` не блокирует submit; `E` (если включите для жёстких расхождений) — блокирует.
+> The technical names of entities and fields depend on the release and the configured data model,
+> so the `c_ent_*` constants are only built-in defaults. `ZMDMDOC_MDG_DISCOVER` (chapter 12)
+> proposes the real mapping of your system, and the `ZMDMDOC_MAP` table (created on the system)
+> overrides the defaults without touching the code.
 
-### 10.8. Тест на системе
+### 10.6. Authorizations and performance
 
-1. Создать CR для BP с банковскими данными; во вложение положить bank letter, где **IBAN
-   отличается** от введённого в заявке.
-2. Нажать Check/Submit → в логе сообщений появляется warning `[SAP-001] IBAN mismatch …`
-   (значения маскированы, напр. `DE**…4931 vs DE**…4999`).
-3. Совпадающий документ → warning'ов нет (внутренний `SAP-000` не выводится).
+- Runs in the context of the MDG request session — **no additional RFC/HTTP is needed** (LLM is
+  disabled on the MDG path; no network is involved). Attachments/entities are read under the
+  request user's authorizations.
+- PDF parsing + regex take milliseconds. Execution is limited to the anchor entity and to PDF
+  attachments only, so as not to slow down every check.
 
-### 10.9. Чек-лист MDG-внедрения
+### 10.7. Where the result is visible
 
-- [ ] Базовый пакет ZMDMDOC активен (вкл. COMPARE + оба MDG-класса).
-- [ ] Класс сообщений `ZMDMDOC` / `001` создан.
-- [ ] Сигнатура `IF_EX_USMD_RULE_SERVICE~CHECK_ENTITY` и `read_entity_data_all` сверены,
-      обращения в коде поправлены при необходимости.
-- [ ] Имена сущностей/полей модели `BP` сверены (`c_ent_*`, маппер), якорная сущность выбрана.
-- [ ] API вложений CR (GOS/объектный тип) подтверждён и подставлен.
-- [ ] BAdI-реализация создана (spot `USMD_RULE_SERVICE`), фильтр `USMD_MODEL = 'BP'`, активна.
-- [ ] End-to-end тест: CR + вложение с неверным IBAN → warning `SAP-001` в логе заявки.
+The warnings appear in the **Change Request message log** (Fiori "My Change Requests" / the request
+UI). `W` does not block submit; `E` (if you enable it for hard mismatches) does.
 
+### 10.8. Test on the system
 
----
+1. Create a CR for a BP with bank data; attach a bank letter whose **IBAN differs** from the one
+   entered in the request.
+2. Press Check/Submit → the message log shows the warning `[SAP-001] IBAN mismatch …`
+   (values are masked, e.g. `DE**…4931 vs DE**…4999`).
+3. A matching document → no warnings (the internal `SAP-000` is not shown).
 
-## 11. Единый скрипт внедрения и пред-запусковые тесты
+### 10.9. MDG implementation checklist
 
-### 11.0. ZMDMDOC_SETUP — «всё разом» (рекомендуемая точка входа)
+- [ ] Base ZMDMDOC package active (incl. COMPARE + both MDG classes).
+- [ ] Message class `ZMDMDOC` / `001` created.
+- [ ] Signature of `IF_EX_USMD_RULE_SERVICE~CHECK_ENTITY` and `read_entity_data_all` verified,
+      code references adjusted where needed.
+- [ ] Entity/field names of model `BP` verified (`c_ent_*`, the mapper), anchor entity chosen.
+- [ ] CR attachment API (GOS/object type) confirmed and plugged in.
+- [ ] BAdI implementation created (spot `USMD_RULE_SERVICE`), filter `USMD_MODEL = 'BP'`, active.
+- [ ] End-to-end test: CR + attachment with a wrong IBAN → warning `SAP-001` in the request log.
 
-Один отчёт **ZMDMDOC_SETUP** (SA38) запускает весь цикл проверки за раз, по порядку:
-
-1. **пред-запусковые тесты** («загрузится / прочитает данные»),
-2. **дискавери** архитектуры полей MDG (предложенный маппинг + непокрытые ключи),
-3. (если задан `p_cr`) **живое чтение заявки** — поля + вложения,
-4. (флаг `p_save`) запись предложенного маппинга в `ZMDMDOC_MAP`.
-
-**Параметры:** `p_model` (модель, дефолт `BP`), `p_cr` (номер CR, опц.), `p_list` (показать все
-сущности/поля), `p_save` (сохранить маппинг). Вывод — единый цветной отчёт с итогом GO / NO-GO.
-
-Отдельные отчёты `ZMDMDOC_DOCTOR` (только тесты) и `ZMDMDOC_MDG_DISCOVER` (только маппинг) — те же
-проверки в фокусном виде; вся логика в классе `ZCL_MDMDOC_ONBOARD`.
-
-### 11.1. ZMDMDOC_DOCTOR — только пред-запусковые тесты
-
-Прежде чем включать BAdI глобально, запустите **ZMDMDOC_DOCTOR** (SA38) — набор маленьких
-независимых проверок «сможет ли загрузиться / сможет ли считать данные». Красная строка сразу
-показывает, что именно чинить, без запуска полной валидации.
-
-**Параметры:** `p_model` (модель, по умолчанию `BP`), `p_cr` (номер CR — опционально, для живой
-проверки чтения заявки).
-
-**Что проверяет:**
-
-- *Ядро (юнит-тестировано, без MDG):* наличие `CL_ABAP_GZIP` / `CL_ABAP_ZIP` /
-  `CL_ABAP_MESSAGE_DIGEST` / `CL_HTTP_CLIENT` / `ZCL_MDMDOC_COMPARE`; round-trip `/UI2/CL_JSON`;
-  маскирование (IBAN не показывается целиком); извлечение текста из тестового PDF; компаратор
-  (искусственный mismatch → `SAP-001`).
-- *MDG:* наличие `IF_USMD_MODEL_EXT` / MDG-классов / `CL_GOS_API`; класс сообщений `ZMDMDOC/001`.
-- *Живой CR (если задан `p_cr`):* реально ли читаются поля заявки (сколько полей прочитано) и
-  вложения (сколько вложений). Так вы отдельно убеждаетесь, что чтение данных и вложений работает,
-  **до** включения проверки в процесс.
-
-Вывод — список PASS/FAIL/SKIP с цветом и итогом «N passed, M failed». Пока есть красное — BAdI не
-включаем.
-
-Логика ядра вынесена в **`ZCL_MDMDOC_SELFTEST`** (класс с юнит-тестами) — те же проверки можно
-дергать программно.
 
 ---
 
-## 12. Адаптивность: авто-подбор маппинга полей (ZMDMDOC_MDG_DISCOVER)
+## 11. Single onboarding script and pre-flight tests
 
-Имена сущностей и полей MDG у разных клиентов различаются, поэтому маппинг **не захардкожен**:
-`ZCL_MDMDOC_MDG_READER` берёт соответствие `SAP_KEY → сущность.поле` из класса
-**`ZCL_MDMDOC_MDG_MAP`** — сначала из таблицы `ZMDMDOC_MAP` (если создана), иначе из встроенных
-дефолтов (стандартные имена MDG-BP).
+### 11.0. ZMDMDOC_SETUP — "everything at once" (recommended entry point)
 
-### 12.1. Дискавери
+One report, **ZMDMDOC_SETUP** (SA38), runs the whole verification cycle in one go, in order:
 
-Отчёт **ZMDMDOC_MDG_DISCOVER** (SA38) читает реальную архитектуру модели (`p_model`, по умолчанию
-`BP`): перечисляет сущности и поля, затем сопоставляет реальные имена полей со списком синонимов
+1. **pre-flight tests** ("will it load / will it read data"),
+2. **discovery** of the MDG field architecture (proposed mapping + uncovered keys),
+3. (if `p_cr` is given) **live read of the request** — fields + attachments,
+4. (flag `p_save`) writing the proposed mapping to `ZMDMDOC_MAP`.
+
+**Parameters:** `p_model` (model, default `BP`), `p_cr` (CR number, opt.), `p_list` (show all
+entities/fields), `p_save` (save the mapping). Output — a single colour-coded report with a
+GO / NO-GO summary.
+
+The standalone reports `ZMDMDOC_DOCTOR` (tests only) and `ZMDMDOC_MDG_DISCOVER` (mapping only) are
+the same checks in focused form; all the logic lives in class `ZCL_MDMDOC_ONBOARD`.
+
+### 11.1. ZMDMDOC_DOCTOR — pre-flight tests only
+
+Before enabling the BAdI globally, run **ZMDMDOC_DOCTOR** (SA38) — a set of small independent
+checks: "can it load / can it read the data". A red line immediately shows what exactly needs
+fixing, without running the full validation.
+
+**Parameters:** `p_model` (model, default `BP`), `p_cr` (CR number — optional, for a live check of
+request reading).
+
+**What it checks:**
+
+- *Core (unit-tested, no MDG):* presence of `CL_ABAP_GZIP` / `CL_ABAP_ZIP` /
+  `CL_ABAP_MESSAGE_DIGEST` / `CL_HTTP_CLIENT` / `ZCL_MDMDOC_COMPARE`; `/UI2/CL_JSON` round-trip;
+  masking (an IBAN is never shown in full); text extraction from a test PDF; the comparator
+  (artificial mismatch → `SAP-001`).
+- *MDG:* presence of `IF_USMD_MODEL_EXT` / the MDG classes / `CL_GOS_API`; message class `ZMDMDOC/001`.
+- *Live CR (if `p_cr` is given):* whether the request fields can actually be read (how many fields
+  were read) and the attachments (how many attachments). This way you confirm that data and
+  attachment reading work — separately, and **before** the check is switched on in the process.
+
+Output — a PASS/FAIL/SKIP list with colours and an "N passed, M failed" summary. As long as
+anything is red — do not enable the BAdI.
+
+The core logic is factored into **`ZCL_MDMDOC_SELFTEST`** (a class with unit tests) — the same
+checks can be invoked programmatically.
+
+---
+
+## 12. Adaptability: automatic field-mapping discovery (ZMDMDOC_MDG_DISCOVER)
+
+MDG entity and field names differ between customers, so the mapping is **not hard-coded**:
+`ZCL_MDMDOC_MDG_READER` takes the `SAP_KEY → entity.field` correspondence from class
+**`ZCL_MDMDOC_MDG_MAP`** — first from the `ZMDMDOC_MAP` table (if created), otherwise from the
+built-in defaults (standard MDG-BP names).
+
+### 12.1. Discovery
+
+Report **ZMDMDOC_MDG_DISCOVER** (SA38) reads the real architecture of the model (`p_model`, default
+`BP`): it lists the entities and fields, then matches the real field names against a synonym list
 (BANKS→bank_country, BANKL→bank_key, BANKN→bank_account, IBAN→iban, NAME_ORG1→account_holder,
-STREET→street, CITY1→city, TAXNUM→tin…) и **предлагает** маппинг. Показывает: список
-сущностей/полей (флаг `p_list`), предложенный маппинг и «непокрытые ключи» (что дозаполнить руками).
-Флаг `p_save` — записать предложение в `ZMDMDOC_MAP`.
+STREET→street, CITY1→city, TAXNUM→tin…) and **proposes** a mapping. It shows: the entity/field
+list (flag `p_list`), the proposed mapping, and the "uncovered keys" (what to fill in by hand).
+Flag `p_save` — write the proposal to `ZMDMDOC_MAP`.
 
-Порядок: `ZMDMDOC_MDG_DISCOVER` → просмотреть предложение → при необходимости поправить →
-сохранить → `ZMDMDOC_DOCTOR` с номером CR (убедиться, что поля читаются) → включить BAdI.
+Order: `ZMDMDOC_MDG_DISCOVER` → review the proposal → adjust if needed →
+save → `ZMDMDOC_DOCTOR` with a CR number (make sure the fields are readable) → enable the BAdI.
 
-### 12.2. Таблица ZMDMDOC_MAP (опциональная, создать в SE11)
+### 12.2. The ZMDMDOC_MAP table (optional, create in SE11)
 
-Прозрачная customizing-таблица (тип «Customizing», класс поставки `C`). Если её нет — работают
-дефолты. Ключевые поля:
+A transparent customizing table (type "Customizing", delivery class `C`). If it does not exist —
+the defaults apply. Key fields:
 
-| Поле | Тип (пример) | Ключ | Смысл |
+| Field | Type (example) | Key | Meaning |
 |---|---|---|---|
-| MODEL | USMD_MODEL (CHAR 30) | X | модель данных (напр. BP) |
-| SAP_KEY | CHAR 40 | X | ключ SAP_KEY (iban, bank_key, account_holder…) |
-| ENTITY | USMD_ENTITY (CHAR 30) | | сущность MDG |
-| FIELD | USMD_FIELDNAME (CHAR 30) | | поле в сущности |
+| MODEL | USMD_MODEL (CHAR 30) | X | data model (e.g. BP) |
+| SAP_KEY | CHAR 40 | X | SAP_KEY key (iban, bank_key, account_holder…) |
+| ENTITY | USMD_ENTITY (CHAR 30) | | MDG entity |
+| FIELD | USMD_FIELDNAME (CHAR 30) | | field within the entity |
 
-`ZCL_MDMDOC_MDG_MAP` читает её **динамически** (`SELECT … FROM ('ZMDMDOC_MAP')`), поэтому классы
-активируются и работают даже когда таблицы нет.
+`ZCL_MDMDOC_MDG_MAP` reads it **dynamically** (`SELECT … FROM ('ZMDMDOC_MAP')`), so the classes
+activate and work even when the table does not exist.
 
-### 12.3. Что подтвердить (verify-on-system)
+### 12.3. What to confirm (verify-on-system)
 
-`ZMDMDOC_MDG_DISCOVER` использует `cl_usmd_model_ext=>get_instance` / `get_entities` /
-`create_data_reference` — сверьте эти вызовы с вашим релизом MDG (в коде помечено). Поля читаются
-через RTTI структуры сущности, так что сами имена полей извлекаются автоматически — правится только
-способ получить список сущностей, если API отличается.
+`ZMDMDOC_MDG_DISCOVER` uses `cl_usmd_model_ext=>get_instance` / `get_entities` /
+`create_data_reference` — verify these calls against your MDG release (marked in the code). Fields
+are read via RTTI of the entity structure, so the field names themselves are discovered
+automatically — only the way the entity list is obtained needs adjusting if the API differs.
 
-### 12.4. Дополнение к чек-листу MDG-внедрения
+### 12.4. Addendum to the MDG implementation checklist
 
-- [ ] `ZMDMDOC_DOCTOR` без `p_cr` — ядро зелёное.
-- [ ] (Опц.) `ZMDMDOC_MAP` создана в SE11 (MODEL/SAP_KEY/ENTITY/FIELD).
-- [ ] `ZMDMDOC_MDG_DISCOVER` (`p_model=BP`) — маппинг предложен, непокрытые ключи закрыты.
-- [ ] `ZMDMDOC_DOCTOR` c номером тестового CR — «read CR fields» и «read CR attachments» зелёные.
-- [ ] Только после этого — активировать BAdI.
+- [ ] `ZMDMDOC_DOCTOR` without `p_cr` — core green.
+- [ ] (Opt.) `ZMDMDOC_MAP` created in SE11 (MODEL/SAP_KEY/ENTITY/FIELD).
+- [ ] `ZMDMDOC_MDG_DISCOVER` (`p_model=BP`) — mapping proposed, uncovered keys closed.
+- [ ] `ZMDMDOC_DOCTOR` with a test CR number — "read CR fields" and "read CR attachments" green.
+- [ ] Only after that — activate the BAdI.
 
 ---
 
-## 13. Полный список тестов
+## 13. Full list of tests
 
-### 13.1. Пред-запусковые проверки (ZMDMDOC_SETUP / ZMDMDOC_DOCTOR)
+### 13.1. Pre-flight checks (ZMDMDOC_SETUP / ZMDMDOC_DOCTOR)
 
-Каждая проверка независима и возвращает PASS / FAIL / SKIP.
+Each check is independent and returns PASS / FAIL / SKIP.
 
-**Ядро (юнит-тестировано, без SAP MDG — `ZCL_MDMDOC_SELFTEST`):**
+**Core (unit-tested, no SAP MDG — `ZCL_MDMDOC_SELFTEST`):**
 
-| Проверка | Что подтверждает |
+| Check | What it confirms |
 |---|---|
-| `CL_ABAP_GZIP` доступен | инфляция сжатых PDF-потоков |
-| `CL_ABAP_ZIP` доступен | распаковка `.zip`-контейнеров |
-| `CL_ABAP_MESSAGE_DIGEST` доступен | SHA-256 (run id) |
-| `CL_HTTP_CLIENT` доступен | вызовы Ollama (LLM-режим) |
-| `ZCL_MDMDOC_COMPARE` доступен | компаратор установлен |
-| `ZIF_MDMDOC_SAP_READER` доступен | адаптер источника установлен |
-| `/UI2/CL_JSON` round-trip | сериализация JSON работает |
-| маскирование | IBAN никогда не выводится целиком |
-| извлечение текста PDF | парсер поднимает текст из тестового PDF |
-| компаратор | искусственный mismatch → `SAP-001` |
+| `CL_ABAP_GZIP` available | inflating compressed PDF streams |
+| `CL_ABAP_ZIP` available | unpacking `.zip` containers |
+| `CL_ABAP_MESSAGE_DIGEST` available | SHA-256 (run id) |
+| `CL_HTTP_CLIENT` available | Ollama calls (LLM mode) |
+| `ZCL_MDMDOC_COMPARE` available | comparator installed |
+| `ZIF_MDMDOC_SAP_READER` available | source adapter installed |
+| `/UI2/CL_JSON` round-trip | JSON serialization works |
+| masking | an IBAN is never printed in full |
+| PDF text extraction | the parser lifts the text from a test PDF |
+| comparator | artificial mismatch → `SAP-001` |
 
 **MDG (verify-on-system):**
 
-| Проверка | Что подтверждает |
+| Check | What it confirms |
 |---|---|
-| `IF_USMD_MODEL_EXT` доступен | MDG-фреймворк на месте |
-| `ZCL_MDMDOC_MDG_READER` / `ZCL_MDG_BP_FIELD_DERR_VAL` доступны | MDG-классы установлены |
-| `CL_GOS_API` доступен | чтение вложений заявки |
-| класс сообщений `ZMDMDOC / 001` | сообщения для лога CR заведены |
-| MDG model read (`p_model`) | модель читается, сущности/поля видны |
-| read CR fields (`p_cr`) | **реально считываются поля заявки** (сколько) |
-| read CR attachments (`p_cr`) | **реально считываются вложения** (сколько) |
+| `IF_USMD_MODEL_EXT` available | the MDG framework is in place |
+| `ZCL_MDMDOC_MDG_READER` / `ZCL_MDG_BP_FIELD_DERR_VAL` available | the MDG classes are installed |
+| `CL_GOS_API` available | reading request attachments |
+| message class `ZMDMDOC / 001` | messages for the CR log exist |
+| MDG model read (`p_model`) | the model is readable, entities/fields visible |
+| read CR fields (`p_cr`) | **request fields are actually read** (how many) |
+| read CR attachments (`p_cr`) | **attachments are actually read** (how many) |
 
-### 13.2. ABAP Unit тесты (в системе: Ctrl+Shift+F10 на пакете)
+### 13.2. ABAP Unit tests (in the system: Ctrl+Shift+F10 on the package)
 
-Локальные тест-классы у каждого класса, `RISK LEVEL HARMLESS DURATION SHORT`, без сети/файлов/GUI.
-Всего **201 тест-метод**:
+Local test classes on every class, `RISK LEVEL HARMLESS DURATION SHORT`, no network/files/GUI.
+**209 test methods** in total (recount on your system with the package-level ABAP Unit run —
+the number grows with updates):
 
-| Класс | Тестов | Покрытие |
+| Class | Tests | Coverage |
 |---|---:|---|
-| ZCL_MDMDOC_RULES | 26 | движок правил, все when-операторы, предикаты, RU-сообщения, JSON-override |
-| ZCL_MDMDOC_MASK | 24 | маски SSN/EIN/IBAN/account, политика display, scrub, leak-gate |
-| ZCL_MDMDOC_SNIFF | 23 | класс/тип документа, инвойс/письмо/W-8 эвристики |
-| ZCL_MDMDOC_VERDICT | 20 | прецеденс вердикта, next_step EN/RU, message_type |
-| ZCL_MDMDOC_FILE | 19 | classify_ext, .eml/.zip разбор, sha16 |
-| ZCL_MDMDOC_COMPARE | 15 | сверка SAP-000..008 (IBAN/account/SWIFT/страна/bank-key/имя), маскирование |
-| ZCL_MDMDOC_REGEX | 14 | извлечение IBAN/SWIFT/routing/EIN/boxed-TIN |
-| ZCL_MDMDOC_NORM | 14 | IBAN mod-97, to_iso2, классификация, парсинг дат |
-| ZCL_MDMDOC_EXTRACT | 13 | overlay regex-перекрывает-LLM, crosscheck |
-| ZCL_MDMDOC_LLM | 12 | парсинг ответа Ollama (за тест-дублем, без сети) |
-| ZCL_MDMDOC_REPORT | 8 | список/JSON, блок SAP COMPARISON, маскирование |
-| ZCL_MDMDOC_PDF | 6 | синтетические PDF (несжатый поток, /Encrypt, счётчик страниц) |
-| ZCL_MDMDOC_SAP_MANUAL | 4 | JSON→поля, сквозной прогон compare |
-| ZCL_MDMDOC_SELFTEST | 3 | ядро пред-запусковых проверок |
+| ZCL_MDMDOC_RULES | 31 | rules engine, all when-operators, predicates, RU messages, JSON override, partial skill swap |
+| ZCL_MDMDOC_EXTRACT | 25 | overlay regex-overrides-LLM, crosscheck, guard heuristics |
+| ZCL_MDMDOC_MASK | 23 | SSN/EIN/IBAN/account masks, display policy, scrub, leak gate |
+| ZCL_MDMDOC_SNIFF | 22 | document class/type, invoice/letter/W-8 heuristics |
+| ZCL_MDMDOC_VERDICT | 19 | verdict precedence, next_step EN/RU, message_type |
+| ZCL_MDMDOC_FILE | 18 | classify_ext, .eml/.zip parsing, sha16 |
+| ZCL_MDMDOC_COMPARE | 16 | SAP-000..008 cross-check (IBAN/account/SWIFT/country/bank key/name), masking |
+| ZCL_MDMDOC_REGEX | 13 | IBAN/SWIFT/routing/EIN/boxed-TIN extraction |
+| ZCL_MDMDOC_NORM | 13 | IBAN mod-97, to_iso2, classification, date parsing |
+| ZCL_MDMDOC_LLM | 11 | Ollama response parsing (behind a test double, no network) |
+| ZCL_MDMDOC_REPORT | 7 | list/JSON, SAP COMPARISON block, masking |
+| ZCL_MDMDOC_PDF | 5 | synthetic PDFs (uncompressed stream, /Encrypt, page counter) |
+| ZCL_MDMDOC_SAP_MANUAL | 3 | JSON→fields, end-to-end compare run |
+| ZCL_MDMDOC_SELFTEST | 2 | core of the pre-flight checks |
+| ZCL_MDMDOC_GOLDEN_DATA | 1 | golden parity: the shared golden corpus through regex→extract→rules→verdict, fields/crosscheck notes/verdict match the Python engine |
 
-Разработчику: `npx --yes @abaplint/cli` — статическая проверка синтаксиса (0 ошибок; MDG-классы
-исключены как verify-on-system). ABAP Unit гоняется только на системе.
+For the developer: `npx --yes @abaplint/cli` — static syntax check (0 errors; the MDG classes are
+excluded as verify-on-system). ABAP Unit runs only on the system.
 
-### 13.3. Рекомендуемый порядок при внедрении
+### 13.3. Recommended order during rollout
 
-1. Импорт пакета → активация → **ABAP Unit** на пакете (Ctrl+Shift+F10) — 201 тест зелёный.
-2. **ZMDMDOC_SETUP** без `p_cr` — ядро + дискавери зелёные, посмотреть предложенный маппинг.
-3. При необходимости создать/заполнить `ZMDMDOC_MAP`, повторить `ZMDMDOC_SETUP` с `p_save`.
-4. **ZMDMDOC_SETUP** с номером тестового `p_cr` — «read CR fields» и «read CR attachments» зелёные.
-5. Только после GO — активировать BAdI (глава 10).
+1. Import the package → activation → **ABAP Unit** on the package (Ctrl+Shift+F10) — all 209 tests
+   green (the number grows with updates).
+2. **ZMDMDOC_SETUP** without `p_cr` — core + discovery green, review the proposed mapping.
+3. If needed, create/fill `ZMDMDOC_MAP`, repeat `ZMDMDOC_SETUP` with `p_save`.
+4. **ZMDMDOC_SETUP** with a test `p_cr` number — "read CR fields" and "read CR attachments" green.
+5. Only after GO — activate the BAdI (chapter 10).

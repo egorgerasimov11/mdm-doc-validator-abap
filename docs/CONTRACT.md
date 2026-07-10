@@ -174,7 +174,8 @@ build IMPORTING iv_doc_class TYPE string iv_doc_type TYPE string
 METHODS:
   constructor IMPORTING iv_rules_json TYPE string OPTIONAL,
     " '' -> generated ZCL_MDMDOC_RULES_DATA tables; else parse zmdmdoc.rules.v1 JSON
-    " via /ui2/cl_json; on parse failure: fall back to generated + remember an engine_error
+    " via /ui2/cl_json; on parse failure: fall back to generated + remember a
+    " fail-closed ENGINE-GUARD finding (emitted on every run)
   run IMPORTING is_ext TYPE zif_mdmdoc_types=>ty_extraction
                 iv_lang TYPE string DEFAULT 'EN'
       RETURNING VALUE(rt_findings) TYPE zif_mdmdoc_types=>tt_findings.
@@ -184,7 +185,11 @@ equals|in|regex_mismatch|check; predicates (private methods, dispatched by check
 field_empty, swift_valid, iban_valid, ein_shape, tin_type_vs_classification,
 individual_with_business_name_and_ein, line_swap_suspect, date_older_than,
 no_bank_ids, unsigned_no_evidence, unsigned_typed_block.
-Unknown predicate/op -> finding rule_id='ENGINE', severity=WARNING, no dump.
+Engine errors are FAIL-CLOSED (never a dump, never a silent skip): an unknown
+predicate/when-op, a rule that raises during evaluation, an invalid non-empty
+verdict_effect, or a broken rules-JSON override each emit a finding
+rule_id='ENGINE-GUARD', severity=WARNING, verdict_effect=NEED_MANUAL_REVIEW —
+a broken rule can hide a blocker but can never let a document silently ACCEPT.
 Message placeholders: {value} raw-or-masked-if-sensitive, {value_masked} always masked,
 {detail} predicate detail. iv_lang='RU' prefers message_ru when non-empty.
 

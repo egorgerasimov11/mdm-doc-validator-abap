@@ -54,6 +54,12 @@ CLASS ltcl_rules DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL
     METHODS pred_unsigned_typed      FOR TESTING.
     METHODS pred_w8_cert_missing     FOR TESTING.
     METHODS pred_w8_cert_present     FOR TESTING.
+    METHODS pred_tin_struct_prefix   FOR TESTING.
+    METHODS pred_tin_struct_ssn      FOR TESTING.
+    METHODS pred_tin_struct_itin     FOR TESTING.
+    METHODS pred_tin_struct_valid_ok FOR TESTING.
+    METHODS pred_tin_ph_nines        FOR TESTING.
+    METHODS pred_tin_ph_fake         FOR TESTING.
 
     " -- message formatting -------------------------------------------
     METHODS msg_masked_iban          FOR TESTING.
@@ -524,6 +530,118 @@ CLASS ltcl_rules IMPLEMENTATION.
     cl_abap_unit_assert=>assert_false(
       act = has_rule( it_findings = lt iv_id = `W8-003` )
       msg = 'a completed certification part must not fire W8-003' ).
+  ENDMETHOD.
+
+
+  METHOD pred_tin_struct_prefix.
+    " W9-040 tin_structural: never-assigned EIN prefix 07 fires; detail digit-free.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `line1_name` iv_value = `Acme LLC` ) )
+                                ( f( iv_name = `tin_raw` iv_value = `07-1234567` ) )
+                                ( f( iv_name = `line3_classification` iv_value = `llc` ) )
+                                ( f( iv_name = `signed` iv_value = `true` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_rule( it_findings = lt iv_id = `W9-040` )
+      msg = 'never-assigned EIN prefix must fire W9-040' ).
+    DATA(ls) = find_rule( it_findings = lt iv_id = `W9-040` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = ls-detail exp = '*not an IRS-assigned prefix*'
+      msg = 'W9-040 detail names the prefix problem' ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt iv_id = `W9-041` )
+      msg = 'structural and placeholder must stay disjoint' ).
+  ENDMETHOD.
+
+
+  METHOD pred_tin_struct_ssn.
+    " SSN area 000 / group 00 / serial 0000 branches.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `line1_name` iv_value = `Jane Miller` ) )
+                                ( f( iv_name = `tin_raw` iv_value = `000-12-3456` ) )
+                                ( f( iv_name = `line3_classification` iv_value = `individual_sole_prop` ) )
+                                ( f( iv_name = `signed` iv_value = `true` ) ) ) ) ).
+    DATA(ls) = find_rule( it_findings = lt iv_id = `W9-040` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = ls-detail exp = '*never-issued area*'
+      msg = 'SSN area 000 must fire W9-040 with the area detail' ).
+
+    DATA(lt_g) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `tin_raw` iv_value = `123-00-4567` ) )
+                                ( f( iv_name = `line1_name` iv_value = `Jane Miller` ) ) ) ) ).
+    DATA(ls_g) = find_rule( it_findings = lt_g iv_id = `W9-040` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = ls_g-detail exp = '*group is invalid*'
+      msg = 'SSN group 00 must fire W9-040 with the group detail' ).
+  ENDMETHOD.
+
+
+  METHOD pred_tin_struct_itin.
+    " ITIN group 89 sits in the 66-69/89 gap -> fires; ATIN 93 stays silent.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `tin_raw` iv_value = `912-89-1234` ) )
+                                ( f( iv_name = `line1_name` iv_value = `Jane Miller` ) ) ) ) ).
+    DATA(ls) = find_rule( it_findings = lt iv_id = `W9-040` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = ls-detail exp = '*ITIN group*'
+      msg = 'ITIN gap group must fire W9-040' ).
+
+    DATA(lt_ok) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `tin_raw` iv_value = `912-93-1234` ) )
+                                ( f( iv_name = `line1_name` iv_value = `Jane Miller` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt_ok iv_id = `W9-040` )
+      msg = 'ATIN group 93 must not fire W9-040' ).
+  ENDMETHOD.
+
+
+  METHOD pred_tin_struct_valid_ok.
+    " Clean EIN prefix 36 and bare-9 SSN-valid values stay silent.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `line1_name` iv_value = `Acme LLC` ) )
+                                ( f( iv_name = `tin_raw` iv_value = `36-1234567` ) )
+                                ( f( iv_name = `line3_classification` iv_value = `llc` ) )
+                                ( f( iv_name = `tin_type` iv_value = `EIN` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt iv_id = `W9-040` )
+      msg = 'valid EIN must not fire W9-040' ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt iv_id = `W9-041` )
+      msg = 'valid EIN must not fire W9-041' ).
+  ENDMETHOD.
+
+
+  METHOD pred_tin_ph_nines.
+    " W9-041 tin_placeholder: all-nines value; W9-040 stays silent (disjoint).
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `line1_name` iv_value = `Acme LLC` ) )
+                                ( f( iv_name = `tin_raw` iv_value = `99-9999999` ) ) ) ) ).
+    DATA(ls) = find_rule( it_findings = lt iv_id = `W9-041` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = ls-detail exp = '*repeated-single-digit*'
+      msg = 'all-nines TIN must fire W9-041' ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt iv_id = `W9-040` )
+      msg = 'placeholder must not also fire W9-040' ).
+  ENDMETHOD.
+
+
+  METHOD pred_tin_ph_fake.
+    " W9-041: SSA reserved-for-advertising SSN 078-05-1120 is a known fake.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w9`
+           it_fields = VALUE #( ( f( iv_name = `line1_name` iv_value = `Jane Miller` ) )
+                                ( f( iv_name = `tin_raw` iv_value = `078-05-1120` ) ) ) ) ).
+    DATA(ls) = find_rule( it_findings = lt iv_id = `W9-041` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = ls-detail exp = '*known never-issued*'
+      msg = 'reserved advertising SSN must fire W9-041' ).
   ENDMETHOD.
 
 
