@@ -86,6 +86,9 @@ CLASS zcl_mdmdoc_extract DEFINITION
       IMPORTING iv_raw_text TYPE string
       CHANGING  cs_ext      TYPE zif_mdmdoc_types=>ty_extraction.
 
+    CLASS-METHODS ground_doc_country
+      CHANGING cs_ext TYPE zif_mdmdoc_types=>ty_extraction.
+
     CLASS-METHODS officer_name_line
       IMPORTING iv_line       TYPE string
       RETURNING VALUE(rv_yes) TYPE abap_bool.
@@ -187,6 +190,7 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
     " textual e-signature annotation used to false-fire W9-020)
     esignature_guard( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
     officer_block_guard( EXPORTING iv_raw_text = iv_raw_text CHANGING cs_ext = rs_ext ).
+    ground_doc_country( CHANGING cs_ext = rs_ext ).
 
     " secrets = full values of every sensitive field present
     register_secrets( CHANGING cs_ext = rs_ext ).
@@ -1050,6 +1054,51 @@ CLASS zcl_mdmdoc_extract IMPLEMENTATION.
       <f>-value = iv_value.
     ELSE.
       INSERT VALUE #( name = iv_name value = iv_value ) INTO TABLE ct_fields.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD ground_doc_country.
+    " [GUARD:ground_doc_country] mirror of Python stage_b._ground_doc_country
+    " (F3): the document's COUNTRY as a derived field — the rules engine scopes
+    " country rules (countries: [DE]) on fields-doc_country. Deterministic and
+    " portable sources only: bank_country -> IBAN prefix -> SWIFT country code;
+    " a W-9 is a US form by definition, a W-8's country is its country of
+    " incorporation. Never overwrites an existing value.
+    DATA(lv_cur) = zcl_mdmdoc_norm=>field_value(
+        it_fields = cs_ext-fields iv_name = `doc_country` ).
+    IF lv_cur IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    DATA lv_cc TYPE string.
+    IF cs_ext-doc_class = zif_mdmdoc_types=>c_doc_class-bank.
+      lv_cc = zcl_mdmdoc_norm=>to_iso2( zcl_mdmdoc_norm=>field_value(
+                  it_fields = cs_ext-fields iv_name = `bank_country` ) ).
+      IF lv_cc IS INITIAL.
+        DATA(lv_iban) = to_upper( zcl_mdmdoc_norm=>field_value(
+                            it_fields = cs_ext-fields iv_name = `iban` ) ).
+        IF strlen( lv_iban ) >= 2 AND lv_iban(2) CO sy-abcde.
+          lv_cc = lv_iban(2).
+        ENDIF.
+      ENDIF.
+      IF lv_cc IS INITIAL.
+        DATA(lv_sw) = to_upper( zcl_mdmdoc_norm=>field_value(
+                          it_fields = cs_ext-fields iv_name = `swift_bic` ) ).
+        IF strlen( lv_sw ) >= 6 AND lv_sw+4(2) CO sy-abcde.
+          lv_cc = lv_sw+4(2).
+        ENDIF.
+      ENDIF.
+    ELSE.
+      IF cs_ext-doc_type = `w9`.
+        lv_cc = `US`.
+      ELSEIF cs_ext-doc_type = `w8`.
+        lv_cc = zcl_mdmdoc_norm=>to_iso2( zcl_mdmdoc_norm=>field_value(
+                    it_fields = cs_ext-fields iv_name = `country_incorporation` ) ).
+      ENDIF.
+    ENDIF.
+    IF lv_cc IS NOT INITIAL.
+      set_field( EXPORTING iv_name = `doc_country` iv_value = lv_cc
+                 CHANGING  ct_fields = cs_ext-fields ).
     ENDIF.
   ENDMETHOD.
 

@@ -31,6 +31,7 @@ INTERFACE zif_mdmdoc_types
            id             TYPE string,
            name           TYPE string,
            applies_to     TYPE string_table,  " empty = applies to all doc types
+           countries      TYPE string_table,  " empty = all countries; else ISO2 list matched against fields-doc_country (F3)
            when_op        TYPE string,  " always|field_missing|flag_true|flag_false|equals|in|regex_mismatch|check
            when_field     TYPE string,
            when_value     TYPE string,  " equals-value / regex pattern

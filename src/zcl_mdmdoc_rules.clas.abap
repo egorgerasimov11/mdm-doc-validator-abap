@@ -315,6 +315,9 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       lt_rules = gt_rules_bank.
     ENDIF.
 
+    DATA lv_country_skips TYPE i.
+    DATA lv_country_ids   TYPE string.
+
     LOOP AT lt_rules ASSIGNING FIELD-SYMBOL(<rule>).
       DATA(ls_rule) = <rule>.
       DATA(lv_rid)  = ls_rule-id.
@@ -327,6 +330,35 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
         READ TABLE ls_rule-applies_to TRANSPORTING NO FIELDS
              WITH KEY table_line = is_ext-doc_type.
         IF sy-subrc <> 0.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+
+      " country scope (F3, mirror of Python engine.run_rules): empty = all
+      " countries; else fields-doc_country must be listed. An UNDETECTED
+      " document country skips the rule and one COUNTRY-1 NOTE reports it
+      " (operator decision: inform, never block).
+      IF ls_rule-countries IS NOT INITIAL.
+        DATA(lv_cc) = to_upper( condense( field_str(
+                          it_fields = is_ext-fields
+                          iv_name   = `doc_country` ) ) ).
+        IF lv_cc IS INITIAL.
+          lv_country_skips = lv_country_skips + 1.
+          IF lv_country_ids IS INITIAL.
+            lv_country_ids = lv_rid.
+          ELSE.
+            lv_country_ids = |{ lv_country_ids }, { lv_rid }|.
+          ENDIF.
+          CONTINUE.
+        ENDIF.
+        DATA(lv_cc_hit) = abap_false.
+        LOOP AT ls_rule-countries INTO DATA(lv_ctry).
+          IF to_upper( condense( lv_ctry ) ) = lv_cc.
+            lv_cc_hit = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+        IF lv_cc_hit = abap_false.
           CONTINUE.
         ENDIF.
       ENDIF.
@@ -429,6 +461,15 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
                  TO rt_findings.
       ENDTRY.
     ENDLOOP.
+
+    IF lv_country_skips > 0.
+      APPEND VALUE #( rule_id        = `COUNTRY-1`
+                      severity       = zif_mdmdoc_types=>c_severity-note
+                      verdict_effect = ``
+                      message        = |document country undetected - { lv_country_skips } | &&
+                                       |country-scoped rule(s) not evaluated ({ lv_country_ids })| )
+             TO rt_findings.
+    ENDIF.
   ENDMETHOD.
 
 

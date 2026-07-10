@@ -7,6 +7,7 @@
       "applies_to": [
         "w8"
       ],
+      "countries": [],
       "severity": "WARNING",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "This is a W-8 (foreign status), not a W-9 — apply W-8 treatment; do not map to Tax Number 1/2 as a W-9.",
@@ -26,6 +27,7 @@
         "unknown",
         "other_tax"
       ],
+      "countries": [],
       "severity": "WARNING",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "Not recognized as a W-9 — confirm the document type before using it as US tax evidence.",
@@ -44,6 +46,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "W-9 Line 1 (taxpayer legal name) is missing/unreadable — Line 1 must feed SAP Name 1.",
@@ -62,6 +65,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "WARNING",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "TIN not readable on the form — cannot verify SSN/EIN mapping.",
@@ -80,6 +84,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "WARNING",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "Federal tax classification (Line 3) unclear — Recipient Type cannot be verified.",
@@ -98,6 +103,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "TIN {value} has the wrong digit count: {detail} (EIN/SSN must be 9 digits).",
@@ -121,6 +127,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "TIN type conflicts with the tax classification: {detail}. Individual/Sole proprietor normally uses SSN (Tax Number 1); businesses use EIN (Tax Number 2).",
@@ -139,6 +146,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "Internal inconsistency: {detail}. Request clarification or an updated W-9 (rule DR-20260624-131532).",
@@ -157,6 +165,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "TIN {value} fails US TIN structure: {detail}. Verify the digits against the form image; if the form really reads so, request a corrected W-9.",
@@ -175,6 +184,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "TIN {value} is a placeholder/known-fake value ({detail}) — not a real TIN. Request the actual TIN or an updated W-9.",
@@ -193,6 +203,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "WARNING",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "Line 1 / Line 2 look swapped or collapsed: {detail}. Never swap or merge W-9 name lines (Line 1 -> Name 1, Line 2 -> Name 2).",
@@ -211,6 +222,7 @@
       "applies_to": [
         "w9"
       ],
+      "countries": [],
       "severity": "WARNING",
       "verdict_effect": "WARNING",
       "message": "W-9 appears unsigned — note for review (blocking only if packet rules say so).",
@@ -229,6 +241,7 @@
       "applies_to": [
         "w8"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "W-8 Certification Part is not signed — an unsigned W-8 is not valid foreign-status evidence.",
@@ -247,6 +260,7 @@
       "applies_to": [
         "w8"
       ],
+      "countries": [],
       "severity": "CRITICAL",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "W-8 Part I beneficial-owner name is missing/unreadable — it must feed SAP Name 1.",
@@ -265,6 +279,7 @@
       "applies_to": [
         "w8"
       ],
+      "countries": [],
       "severity": "WARNING",
       "verdict_effect": "NEED_MANUAL_REVIEW",
       "message": "Chapter-4 (FATCA) status is claimed without a completed certification part: {detail}.",
@@ -283,6 +298,7 @@
       "applies_to": [
         "w8"
       ],
+      "countries": [],
       "severity": "NOTE",
       "verdict_effect": "",
       "message": "W-8 signature date {value} is older than ~3 years — W-8 forms expire after the third full calendar year; consider requesting a fresh one.",
@@ -306,6 +322,7 @@
       "applies_to": [
         "w8"
       ],
+      "countries": [],
       "severity": "NOTE",
       "verdict_effect": "",
       "message": "W-8 carries no signature date — expiry cannot be tracked.",

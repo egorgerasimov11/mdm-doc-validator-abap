@@ -27,6 +27,9 @@ CLASS ltcl_extract DEFINITION FINAL FOR TESTING
       RETURNING VALUE(rv_yes) TYPE abap_bool.
 
     " bank overlay
+    METHODS doc_country_from_bank    FOR TESTING.
+    METHODS doc_country_fallbacks     FOR TESTING.
+    METHODS doc_country_w9_us         FOR TESTING.
     METHODS iban_fill            FOR TESTING.
     METHODS iban_confirm         FOR TESTING.
     METHODS account_confirm      FOR TESTING.
@@ -97,6 +100,69 @@ CLASS ltcl_extract IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
+
+  METHOD doc_country_from_bank.
+    " [GUARD:ground_doc_country] F3: bank_country (normalized to ISO2) is the
+    " first source, and an existing doc_country is never overwritten.
+    DATA lt_llm TYPE zif_mdmdoc_types=>tt_fields.
+    INSERT fld( iv_name = `bank_country` iv_value = `Germany` ) INTO TABLE lt_llm.
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = VALUE #( ) iv_llm_used = abap_true ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_country` ) exp = `DE`
+      msg = `doc_country grounded from bank_country` ).
+
+    CLEAR lt_llm.
+    INSERT fld( iv_name = `doc_country` iv_value = `IT` ) INTO TABLE lt_llm.
+    INSERT fld( iv_name = `bank_country` iv_value = `Germany` ) INTO TABLE lt_llm.
+    ls = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = VALUE #( ) iv_llm_used = abap_true ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_country` ) exp = `IT`
+      msg = `existing doc_country never overwritten` ).
+  ENDMETHOD.
+
+
+  METHOD doc_country_fallbacks.
+    " F3: no bank_country -> IBAN prefix; no IBAN -> SWIFT country code.
+    DATA lt_llm TYPE zif_mdmdoc_types=>tt_fields.
+    INSERT fld( iv_name = `iban` iv_value = c_iban ) INTO TABLE lt_llm.
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = VALUE #( ) iv_llm_used = abap_true ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_country` ) exp = `DE`
+      msg = `doc_country from the IBAN prefix` ).
+
+    CLEAR lt_llm.
+    INSERT fld( iv_name = `swift_bic` iv_value = `BOFAUS3N` ) INTO TABLE lt_llm.
+    ls = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `bank` iv_doc_type = `bank_letter`
+      it_llm_fields = lt_llm it_candidates = VALUE #( ) iv_llm_used = abap_true ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_country` ) exp = `US`
+      msg = `doc_country from the SWIFT country code` ).
+  ENDMETHOD.
+
+
+  METHOD doc_country_w9_us.
+    " F3: a W-9 is a US form by definition; other tax types stay unknown.
+    DATA(ls) = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `w9` iv_doc_type = `w9`
+      it_llm_fields = VALUE #( ) it_candidates = VALUE #( ) iv_llm_used = abap_true ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_country` ) exp = `US`
+      msg = `W-9 grounds doc_country US` ).
+    ls = zcl_mdmdoc_extract=>build(
+      iv_doc_class = `w9` iv_doc_type = `other_tax`
+      it_llm_fields = VALUE #( ) it_candidates = VALUE #( ) iv_llm_used = abap_true ).
+    cl_abap_unit_assert=>assert_equals(
+      act = field_of( is_ext = ls iv_name = `doc_country` ) exp = ``
+      msg = `unknown tax form grounds nothing` ).
+  ENDMETHOD.
+
 
   METHOD iban_fill.
     DATA lt_llm  TYPE zif_mdmdoc_types=>tt_fields.

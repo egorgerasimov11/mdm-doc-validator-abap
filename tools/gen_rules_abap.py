@@ -163,10 +163,15 @@ def load_rules(doc_class_or_path) -> tuple[list[dict], list[str], dict]:
         effect = raw.get("verdict_effect")
         if effect not in EFFECTS:
             die(f"rule {rid}: unknown verdict_effect {effect!r}")
+        countries = [str(c).strip().upper() for c in (raw.get("countries") or [])]
+        for c in countries:
+            if not re.fullmatch(r"[A-Z]{2}", c):
+                die(f"rule {rid}: countries entries must be 2-letter ISO codes, got {c!r}")
         rule = {
             "id": rid,
             "name": str(raw.get("name", "")),
             "applies_to": [str(a) for a in (raw.get("applies_to") or [])],
+            "countries": countries,
             "severity": sev,
             "verdict_effect": effect or "",
             "message": str(raw.get("message", "")),
@@ -186,6 +191,8 @@ def emit_rule(rule: dict, target: str) -> str:
     lines.append(f"        name = {abap_str(rule['name'])}")
     if rule["applies_to"]:
         lines.append(f"        applies_to = {string_table(rule['applies_to'], '        ')}")
+    if rule.get("countries"):
+        lines.append(f"        countries = {string_table(rule['countries'], '        ')}")
     lines.append(f"        when_op = {abap_str(rule['when_op'])}")
     if rule["when_field"]:
         lines.append(f"        when_field = {abap_str(rule['when_field'])}")

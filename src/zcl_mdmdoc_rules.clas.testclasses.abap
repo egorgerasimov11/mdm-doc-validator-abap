@@ -34,6 +34,8 @@ CLASS ltcl_rules DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL
     METHODS when_flag_true           FOR TESTING.
     METHODS when_flag_false          FOR TESTING.
     METHODS applies_to_filter        FOR TESTING.
+    METHODS country_scope_filter     FOR TESTING.
+    METHODS country_unknown_notes    FOR TESTING.
 
     " -- predicates ---------------------------------------------------
     METHODS pred_field_empty         FOR TESTING.
@@ -193,6 +195,55 @@ CLASS ltcl_rules IMPLEMENTATION.
     cl_abap_unit_assert=>assert_false(
       act = has_rule( it_findings = lt_signed iv_id = `W9-020` )
       msg = 'flag_false: signed W-9 must not fire W9-020' ).
+  ENDMETHOD.
+
+
+  METHOD country_scope_filter.
+    " F3: a countries-scoped rule fires only when fields-doc_country matches;
+    " a different detected country skips it SILENTLY (no COUNTRY-1 note).
+    DATA(lo) = NEW zcl_mdmdoc_rules( iv_rules_json =
+      `{"schema":"zmdmdoc.rules.v1","rules_bank":[` &&
+      `{"id":"BNK-C01","name":"de only","countries":["DE"],` &&
+      `"when_op":"always","severity":"WARNING","verdict_effect":"NEED_MANUAL_REVIEW",` &&
+      `"message":"de-scoped"}]}` ).
+    DATA(lt_de) = lo->run(
+      ext( iv_class = `bank` iv_type = `bank_letter`
+           it_fields = VALUE #( ( f( iv_name = `doc_country` iv_value = `DE` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_rule( it_findings = lt_de iv_id = `BNK-C01` )
+      msg = 'countries: DE document fires the DE-scoped rule' ).
+    DATA(lt_us) = lo->run(
+      ext( iv_class = `bank` iv_type = `bank_letter`
+           it_fields = VALUE #( ( f( iv_name = `doc_country` iv_value = `US` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt_us iv_id = `BNK-C01` )
+      msg = 'countries: US document skips the DE-scoped rule' ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt_us iv_id = `COUNTRY-1` )
+      msg = 'countries: a DETECTED non-matching country needs no note' ).
+  ENDMETHOD.
+
+
+  METHOD country_unknown_notes.
+    " F3: undetected document country -> the scoped rule is skipped and ONE
+    " COUNTRY-1 NOTE (no verdict effect) reports what was not evaluated.
+    DATA(lo) = NEW zcl_mdmdoc_rules( iv_rules_json =
+      `{"schema":"zmdmdoc.rules.v1","rules_bank":[` &&
+      `{"id":"BNK-C01","name":"de only","countries":["DE"],` &&
+      `"when_op":"always","severity":"WARNING","verdict_effect":"NEED_MANUAL_REVIEW",` &&
+      `"message":"de-scoped"}]}` ).
+    DATA(lt) = lo->run(
+      ext( iv_class = `bank` iv_type = `bank_letter` it_fields = VALUE #( ) ) ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt iv_id = `BNK-C01` )
+      msg = 'countries: unknown country must not fire the scoped rule' ).
+    DATA(ls_note) = find_rule( it_findings = lt iv_id = `COUNTRY-1` ).
+    cl_abap_unit_assert=>assert_equals(
+      act = ls_note-severity exp = zif_mdmdoc_types=>c_severity-note
+      msg = 'COUNTRY-1 is a NOTE' ).
+    cl_abap_unit_assert=>assert_initial(
+      act = ls_note-verdict_effect
+      msg = 'COUNTRY-1 never carries a verdict effect' ).
   ENDMETHOD.
 
 
