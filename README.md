@@ -33,7 +33,7 @@ Validator core (runs on any system ≥ 7.50):
 | `ZCL_MDMDOC_PDF` | PDF text-layer extraction in pure ABAP (FlateDecode + BT/ET + ToUnicode) |
 | `ZCL_MDMDOC_SNIFF` | document class auto-detection (bank / w9) and type (invoice, bank_letter, w8…) |
 | `ZCL_MDMDOC_REGEX` | deterministic ID extraction: IBAN, SWIFT, routing/ABA, account, EIN/SSN, boxed TIN |
-| `ZCL_MDMDOC_LLM` | optional Ollama client (`/api/chat`): text-model field extraction, vision for scans |
+| `ZCL_MDMDOC_LLM` | optional client for **your own** Ollama (`/api/chat`): text-model field extraction, vision for scans. The only network code in the package; never touches the internet |
 | `ZCL_MDMDOC_EXTRACT` | merge: regex candidates cross-check the model read + deterministic guards, normalization |
 | `ZCL_MDMDOC_NORM` | normalizers: ISO2 countries, mod-97, dates, classifications, names |
 | `ZCL_MDMDOC_RULES` | rule engine: the original's YAML rules compiled to ABAP + runtime JSON override |
@@ -79,7 +79,12 @@ generated + 5 MDG-scenario) + message class `ZMDMDOC`.
    on your system).
 4. Run: SA38 → `ZMDMDOC`. For the first run see `samples/README.md` (demo document).
 
-### Optional: local Ollama (LLM extraction + scans)
+### Optional: your own local Ollama (LLM extraction + scans)
+
+> **No internet involved.** The model runs on your hardware and documents never leave your
+> perimeter. ABAP reaches Ollama over HTTP because Ollama *is* a server — even on
+> `localhost` that is an HTTP call, and there is no other way to talk to a model from ABAP.
+> Leave the LLM checkbox off and the validator makes **zero network calls**.
 
 ```bash
 brew install ollama          # or curl -fsSL https://ollama.com/install.sh | sh
