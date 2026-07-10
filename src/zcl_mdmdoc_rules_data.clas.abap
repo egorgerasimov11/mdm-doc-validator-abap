@@ -404,6 +404,30 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `аемых банковских документов.)`
         tier = `corp`
       ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-048`
+        name = `swift_missing_warning`
+        applies_to = VALUE #(
+          ( `bank_letter` )
+          ( `bank_statement` )
+          ( `supplier_letterhead` )
+          ( `bank_screenshot` )
+          ( `voided_check` )
+          ( `ap_document` )
+          ( `payment_instructions` ) )
+        when_op = `check`
+        when_field = `swift_bic`
+        check_name = `field_empty`
+        severity = `WARNING`
+        verdict_effect = `WARNING`
+        message = `No SWIFT/BIC in the document — a banking document should carry a SWIFT/BIC. Confirm it aga` &&
+        `inst the SAP data / request form before proceeding. (Operator policy 2026-07-10: a missing` &&
+        ` SWIFT is always a warning.)`
+        message_ru = `В документе нет SWIFT/BIC — банковский документ должен содержать SWIFT/BIC. Подтвердите ег` &&
+        `о по данным SAP / форме запроса перед продолжением. (Политика оператора 2026-07-10: отсутс` &&
+        `твие SWIFT — всегда предупреждение.)`
+        tier = `corp`
+      ) TO gt_rules_bank.
   ENDMETHOD.
 
   METHOD build_w9.

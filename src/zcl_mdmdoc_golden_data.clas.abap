@@ -1,6 +1,6 @@
 " GENERATED from tools/golden/golden_cases.json by tools/golden/gen_abap_golden.py
 " *** DO NOT EDIT BY HAND — edit the JSON corpus and re-run the generator ***
-" GOLDEN-HASH c85b4302d43d7901
+" GOLDEN-HASH 0f1dbbd08066e066
 " GEN-HASH caa4175f8b059eb4
 CLASS zcl_mdmdoc_golden_data DEFINITION
   PUBLIC
@@ -31,7 +31,7 @@ CLASS zcl_mdmdoc_golden_data DEFINITION
     CLASS-METHODS class_constructor.
 
     " corpus hash of the JSON this was generated from (check_parity freshness)
-    CONSTANTS c_golden_hash TYPE string VALUE `c85b4302d43d7901`.
+    CONSTANTS c_golden_hash TYPE string VALUE `0f1dbbd08066e066`.
 ENDCLASS.
 
 
@@ -171,6 +171,7 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
         ( name = `account_holder` value = `Helios OU` )
         ( name = `bank_name` value = `Deutsche Bank` )
         ( name = `iban` value = `DE89370400440532013000` )
+        ( name = `swift_bic` value = `DEUTDEFF` )
         ( name = `signed` value = `true` )
       )
       exp_fields = VALUE #(
@@ -180,6 +181,24 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
         ( `iban=MISMATCH(model=DE**…3000 vs ocr=DE**…4931)` )
       )
       exp_verdict = `ACCEPT`
+    ) TO gt_cases.
+    APPEND VALUE #(
+      id = `bank-no-swift-warning`
+      doc_class = `bank`
+      doc_type = `bank_letter`
+      filename = `no_swift.pdf`
+      raw_text = `Bank confirmation letter. Account of Falcon OU held at Deutsche Bank, IBAN DE89 3704 0044 ` &&
+          `0532 0130 00. Signed by officer.`
+      llm_fields = VALUE #(
+        ( name = `account_holder` value = `Falcon OU` )
+        ( name = `bank_name` value = `Deutsche Bank` )
+        ( name = `iban` value = `DE89370400440532013000` )
+        ( name = `signed` value = `true` )
+      )
+      exp_verdict = `WARNING`
+      exp_findings = VALUE #(
+        ( `BNK-048` )
+      )
     ) TO gt_cases.
     APPEND VALUE #(
       id = `missing-holder-nmr`
@@ -208,6 +227,7 @@ CLASS zcl_mdmdoc_golden_data IMPLEMENTATION.
         ( name = `account_holder` value = `Kestrel BV` )
         ( name = `bank_name` value = `ABN AMRO` )
         ( name = `doc_date` value = `15 Jan 2019` )
+        ( name = `swift_bic` value = `ABNANL2A` )
         ( name = `signed` value = `true` )
       )
       exp_verdict = `ACCEPT`

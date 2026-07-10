@@ -514,6 +514,31 @@
       "when_values": [],
       "check_name": "",
       "check_args": []
+    },
+    {
+      "id": "BNK-048",
+      "name": "swift_missing_warning",
+      "applies_to": [
+        "bank_letter",
+        "bank_statement",
+        "supplier_letterhead",
+        "bank_screenshot",
+        "voided_check",
+        "ap_document",
+        "payment_instructions"
+      ],
+      "countries": [],
+      "severity": "WARNING",
+      "verdict_effect": "WARNING",
+      "message": "No SWIFT/BIC in the document — a banking document should carry a SWIFT/BIC. Confirm it against the SAP data / request form before proceeding. (Operator policy 2026-07-10: a missing SWIFT is always a warning.)",
+      "message_ru": "В документе нет SWIFT/BIC — банковский документ должен содержать SWIFT/BIC. Подтвердите его по данным SAP / форме запроса перед продолжением. (Политика оператора 2026-07-10: отсутствие SWIFT — всегда предупреждение.)",
+      "tier": "corp",
+      "when_op": "check",
+      "when_field": "swift_bic",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "field_empty",
+      "check_args": []
     }
   ],
   "rules_w9": [
