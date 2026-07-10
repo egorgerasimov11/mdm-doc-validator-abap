@@ -502,6 +502,101 @@
       "when_values": [],
       "check_name": "",
       "check_args": []
+    },
+    {
+      "id": "W8-001",
+      "name": "w8_unsigned",
+      "applies_to": [
+        "w8"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "W-8 Certification Part is not signed — an unsigned W-8 is not valid foreign-status evidence.",
+      "message_ru": "",
+      "tier": "experimental",
+      "when_op": "flag_false",
+      "when_field": "signed",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "W8-002",
+      "name": "w8_no_legal_name",
+      "applies_to": [
+        "w8"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "W-8 Part I beneficial-owner name is missing/unreadable — it must feed SAP Name 1.",
+      "message_ru": "",
+      "tier": "experimental",
+      "when_op": "field_missing",
+      "when_field": "legal_name",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
+    },
+    {
+      "id": "W8-003",
+      "name": "w8_ch4_cert_missing",
+      "applies_to": [
+        "w8"
+      ],
+      "severity": "WARNING",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "Chapter-4 (FATCA) status is claimed without a completed certification part: {detail}.",
+      "message_ru": "",
+      "tier": "experimental",
+      "when_op": "check",
+      "when_field": "chapter4_status",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "w8_ch4_cert_missing",
+      "check_args": []
+    },
+    {
+      "id": "W8-004",
+      "name": "w8_stale",
+      "applies_to": [
+        "w8"
+      ],
+      "severity": "NOTE",
+      "verdict_effect": "",
+      "message": "W-8 signature date {value} is older than ~3 years — W-8 forms expire after the third full calendar year; consider requesting a fresh one.",
+      "message_ru": "",
+      "tier": "experimental",
+      "when_op": "check",
+      "when_field": "sign_date",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "date_older_than",
+      "check_args": [
+        {
+          "name": "years",
+          "value": "3"
+        }
+      ]
+    },
+    {
+      "id": "W8-005",
+      "name": "w8_undated",
+      "applies_to": [
+        "w8"
+      ],
+      "severity": "NOTE",
+      "verdict_effect": "",
+      "message": "W-8 carries no signature date — expiry cannot be tracked.",
+      "message_ru": "",
+      "tier": "experimental",
+      "when_op": "field_missing",
+      "when_field": "sign_date",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "",
+      "check_args": []
     }
   ],
   "iban_length": [

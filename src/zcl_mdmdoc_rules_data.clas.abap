@@ -396,6 +396,70 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         message = `W-9 appears unsigned — note for review (blocking only if packet rules say so).`
         tier = `corp`
       ) TO gt_rules_w9.
+    APPEND VALUE #(
+        id = `W8-001`
+        name = `w8_unsigned`
+        applies_to = VALUE #(
+          ( `w8` ) )
+        when_op = `flag_false`
+        when_field = `signed`
+        severity = `CRITICAL`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `W-8 Certification Part is not signed — an unsigned W-8 is not valid foreign-status evidenc` &&
+        `e.`
+        tier = `experimental`
+      ) TO gt_rules_w9.
+    APPEND VALUE #(
+        id = `W8-002`
+        name = `w8_no_legal_name`
+        applies_to = VALUE #(
+          ( `w8` ) )
+        when_op = `field_missing`
+        when_field = `legal_name`
+        severity = `CRITICAL`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `W-8 Part I beneficial-owner name is missing/unreadable — it must feed SAP Name 1.`
+        tier = `experimental`
+      ) TO gt_rules_w9.
+    APPEND VALUE #(
+        id = `W8-003`
+        name = `w8_ch4_cert_missing`
+        applies_to = VALUE #(
+          ( `w8` ) )
+        when_op = `check`
+        when_field = `chapter4_status`
+        check_name = `w8_ch4_cert_missing`
+        severity = `WARNING`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `Chapter-4 (FATCA) status is claimed without a completed certification part: {detail}.`
+        tier = `experimental`
+      ) TO gt_rules_w9.
+    APPEND VALUE #(
+        id = `W8-004`
+        name = `w8_stale`
+        applies_to = VALUE #(
+          ( `w8` ) )
+        when_op = `check`
+        when_field = `sign_date`
+        check_name = `date_older_than`
+        check_args = VALUE #(
+          ( name = `years` value = `3` ) )
+        severity = `NOTE`
+        message = `W-8 signature date {value} is older than ~3 years — W-8 forms expire after the third full ` &&
+        `calendar year; consider requesting a fresh one.`
+        tier = `experimental`
+      ) TO gt_rules_w9.
+    APPEND VALUE #(
+        id = `W8-005`
+        name = `w8_undated`
+        applies_to = VALUE #(
+          ( `w8` ) )
+        when_op = `field_missing`
+        when_field = `sign_date`
+        severity = `NOTE`
+        message = `W-8 carries no signature date — expiry cannot be tracked.`
+        tier = `experimental`
+      ) TO gt_rules_w9.
   ENDMETHOD.
 
   METHOD build_tables.

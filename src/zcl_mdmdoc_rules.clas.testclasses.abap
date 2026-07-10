@@ -52,6 +52,8 @@ CLASS ltcl_rules DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL
     METHODS pred_no_bank_ids         FOR TESTING.
     METHODS pred_unsigned_no_ev      FOR TESTING.
     METHODS pred_unsigned_typed      FOR TESTING.
+    METHODS pred_w8_cert_missing     FOR TESTING.
+    METHODS pred_w8_cert_present     FOR TESTING.
 
     " -- message formatting -------------------------------------------
     METHODS msg_masked_iban          FOR TESTING.
@@ -494,6 +496,34 @@ CLASS ltcl_rules IMPLEMENTATION.
     cl_abap_unit_assert=>assert_false(
       act = has_rule( it_findings = lt iv_id = `BNK-021` )
       msg = 'with compensating evidence BNK-021 must not fire' ).
+  ENDMETHOD.
+
+
+  METHOD pred_w8_cert_missing.
+    " W-8 with a chapter-4 status but no completed certification part -> W8-003.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w8`
+           it_fields = VALUE #( ( f( iv_name = `legal_name` iv_value = `Nord Fake GmbH` ) )
+                                ( f( iv_name = `chapter4_status` iv_value = `Active NFFE` ) )
+                                ( f( iv_name = `chapter4_cert_section` iv_value = `` ) )
+                                ( f( iv_name = `signed` iv_value = `true` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_true(
+      act = has_rule( it_findings = lt iv_id = `W8-003` )
+      msg = 'claimed ch4 status without a certification part must fire W8-003' ).
+  ENDMETHOD.
+
+
+  METHOD pred_w8_cert_present.
+    " Completed certification part (or no claimed status) -> silent.
+    DATA(lt) = mo_cut->run(
+      ext( iv_class = `w9` iv_type = `w8`
+           it_fields = VALUE #( ( f( iv_name = `legal_name` iv_value = `Nord Fake GmbH` ) )
+                                ( f( iv_name = `chapter4_status` iv_value = `Active NFFE` ) )
+                                ( f( iv_name = `chapter4_cert_section` iv_value = `Part XXV` ) )
+                                ( f( iv_name = `signed` iv_value = `true` ) ) ) ) ).
+    cl_abap_unit_assert=>assert_false(
+      act = has_rule( it_findings = lt iv_id = `W8-003` )
+      msg = 'a completed certification part must not fire W8-003' ).
   ENDMETHOD.
 
 

@@ -166,6 +166,11 @@ CLASS zcl_mdmdoc_rules DEFINITION
       IMPORTING is_ext    TYPE zif_mdmdoc_types=>ty_extraction
       EXPORTING ev_fired  TYPE abap_bool
                 ev_detail TYPE string.
+
+    METHODS p_w8_ch4_cert_missing
+      IMPORTING is_ext    TYPE zif_mdmdoc_types=>ty_extraction
+      EXPORTING ev_fired  TYPE abap_bool
+                ev_detail TYPE string.
 ENDCLASS.
 
 
@@ -476,6 +481,9 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
       WHEN `unsigned_typed_block`.
         p_unsigned_typed_block( EXPORTING is_ext = is_ext
                                 IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
+      WHEN `w8_ch4_cert_missing`.
+        p_w8_ch4_cert_missing( EXPORTING is_ext = is_ext
+                               IMPORTING ev_fired = ev_fired ev_detail = ev_detail ).
       WHEN OTHERS.
         ev_unknown = abap_true.
     ENDCASE.
@@ -848,6 +856,20 @@ CLASS zcl_mdmdoc_rules IMPLEMENTATION.
     ELSE.
       ev_fired = abap_false.
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD p_w8_ch4_cert_missing.
+    " W-8BEN-E: Part I claims a chapter-4 (FATCA) status but no matching
+    " certification Part is completed (mirrors predicates.w8_ch4_cert_missing)
+    DATA(lv_status) = field_str( it_fields = is_ext-fields iv_name = `chapter4_status` ).
+    DATA(lv_cert)   = field_str( it_fields = is_ext-fields iv_name = `chapter4_cert_section` ).
+    IF lv_status IS INITIAL OR lv_cert IS NOT INITIAL.
+      ev_fired = abap_false.
+      RETURN.
+    ENDIF.
+    ev_fired  = abap_true.
+    ev_detail = |chapter-4 status '{ lv_status }' is claimed but no certification part is completed|.
   ENDMETHOD.
 
   METHOD list_rules.
