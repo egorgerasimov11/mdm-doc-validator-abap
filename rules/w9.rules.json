@@ -152,6 +152,42 @@
       "check_args": []
     },
     {
+      "id": "W9-040",
+      "name": "tin_structure_invalid",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "TIN {value} fails US TIN structure: {detail}. Verify the digits against the form image; if the form really reads so, request a corrected W-9.",
+      "message_ru": "TIN {value} структурно невалиден: {detail}. Сверить с изображением формы; если так и напечатано — запросить исправленный W-9.",
+      "tier": "corp",
+      "when_op": "check",
+      "when_field": "tin_raw",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "tin_structural",
+      "check_args": []
+    },
+    {
+      "id": "W9-041",
+      "name": "tin_placeholder_fake",
+      "applies_to": [
+        "w9"
+      ],
+      "severity": "CRITICAL",
+      "verdict_effect": "NEED_MANUAL_REVIEW",
+      "message": "TIN {value} is a placeholder/known-fake value ({detail}) — not a real TIN. Request the actual TIN or an updated W-9.",
+      "message_ru": "TIN {value} — заглушка/известный фиктивный номер ({detail}). Запросить настоящий TIN или обновлённый W-9.",
+      "tier": "corp",
+      "when_op": "check",
+      "when_field": "tin_raw",
+      "when_value": "",
+      "when_values": [],
+      "check_name": "tin_placeholder",
+      "check_args": []
+    },
+    {
       "id": "W9-013",
       "name": "line_swap_suspect",
       "applies_to": [

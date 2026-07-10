@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate ZCL_MDMDOC_RULES_DATA (ABAP) + rules/rules.json from the YAML rule files.
 
-Input : rules/banking.yaml, rules/w9.yaml  (copies of the Python mdm-doc-validator rules)
+Input : rules/rules.yaml (the unified rules file, copied from the Python repo;
+        legacy rules/banking.yaml + rules/w9.yaml still work as a fallback)
 Output: src/zcl_mdmdoc_rules_data.clas.abap (+ .clas.xml if missing)
         rules/rules.json                    (runtime-override template for p_rules)
 
@@ -129,8 +130,30 @@ def parse_when(rule_id: str, when: dict) -> dict:
     return out
 
 
-def load_rules(path: Path) -> tuple[list[dict], list[str], dict]:
-    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+_UNIFIED_SECTION_RE = re.compile(r"(?m)^--- # doc_class: (\w+)\s*$")
+
+
+def _class_text(doc_class: str) -> str:
+    """Rule YAML text for a class: the unified rules/rules.yaml section (D9)
+    or the legacy per-class file."""
+    uni = RULES_DIR / "rules.yaml"
+    if uni.exists():
+        text = uni.read_text(encoding="utf-8")
+        marks = list(_UNIFIED_SECTION_RE.finditer(text))
+        for i, m in enumerate(marks):
+            if m.group(1) == doc_class:
+                end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+                return text[m.end():end]
+        die(f"rules.yaml has no '--- # doc_class: {doc_class}' section")
+    legacy = RULES_DIR / ("banking.yaml" if doc_class == "bank" else "w9.yaml")
+    return legacy.read_text(encoding="utf-8")
+
+
+def load_rules(doc_class_or_path) -> tuple[list[dict], list[str], dict]:
+    if isinstance(doc_class_or_path, Path):
+        doc = yaml.safe_load(doc_class_or_path.read_text(encoding="utf-8"))
+    else:
+        doc = yaml.safe_load(_class_text(doc_class_or_path))
     rules = []
     for raw in doc.get("rules", []):
         rid = str(raw.get("id", "?"))
@@ -282,8 +305,8 @@ def main() -> None:
                          "(corp = the SAP v1 shipping profile); untiered rules always pass")
     args = ap.parse_args()
 
-    bank, bank_types, bank_tables = load_rules(RULES_DIR / "banking.yaml")
-    w9, w9_types, _ = load_rules(RULES_DIR / "w9.yaml")
+    bank, bank_types, bank_tables = load_rules("bank")
+    w9, w9_types, _ = load_rules("w9")
     bank = filter_tier(bank, args.tier_min)
     w9 = filter_tier(w9, args.tier_min)
     iban_len = bank_tables.get("iban_length", {})

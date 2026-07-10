@@ -299,6 +299,92 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         `е вручную.`
         tier = `experimental`
       ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-040`
+        name = `routing_format_9d`
+        when_op = `check`
+        when_field = `routing_aba`
+        check_name = `routing_format`
+        severity = `CRITICAL`
+        verdict_effect = `REJECT`
+        message = `Routing number {value_masked} is not 9 numeric digits: {detail}.`
+        message_ru = `Routing-номер {value_masked} — не 9 цифр: {detail}.`
+        tier = `corp`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-041`
+        name = `routing_checksum`
+        when_op = `check`
+        when_field = `routing_aba`
+        check_name = `routing_checksum`
+        severity = `CRITICAL`
+        verdict_effect = `REJECT`
+        message = `Routing number {value_masked} fails the ABA 3-7-1 checksum: {detail}.`
+        message_ru = `Routing-номер {value_masked} не проходит контрольную сумму ABA 3-7-1: {detail}.`
+        tier = `corp`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-042`
+        name = `routing_prefix`
+        when_op = `check`
+        when_field = `routing_aba`
+        check_name = `routing_prefix`
+        severity = `CRITICAL`
+        verdict_effect = `REJECT`
+        message = `Routing number {value_masked} has a never-assigned Fed prefix: {detail}.`
+        message_ru = `Routing-номер {value_masked} имеет никогда не назначаемый префикс ФРС: {detail}.`
+        tier = `corp`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-043`
+        name = `account_sig_digits`
+        when_op = `check`
+        when_field = `account_number`
+        check_name = `account_sig_digits`
+        check_args = VALUE #(
+          ( name = `min` value = `4` ) )
+        severity = `WARNING`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `Account number {value_masked} looks unusable: {detail}.`
+        message_ru = `Номер счёта {value_masked} выглядит непригодным: {detail}.`
+        tier = `corp`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-044`
+        name = `routing_wires_format_9d`
+        when_op = `check`
+        when_field = `routing_aba_wires`
+        check_name = `routing_format`
+        severity = `CRITICAL`
+        verdict_effect = `REJECT`
+        message = `Wire routing number {value_masked} is not 9 numeric digits: {detail}.`
+        message_ru = `Wire-routing {value_masked} — не 9 цифр: {detail}.`
+        tier = `corp`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-045`
+        name = `routing_wires_checksum`
+        when_op = `check`
+        when_field = `routing_aba_wires`
+        check_name = `routing_checksum`
+        severity = `CRITICAL`
+        verdict_effect = `REJECT`
+        message = `Wire routing number {value_masked} fails the ABA 3-7-1 checksum: {detail}.`
+        message_ru = `Wire-routing {value_masked} не проходит контрольную сумму ABA 3-7-1: {detail}.`
+        tier = `corp`
+      ) TO gt_rules_bank.
+    APPEND VALUE #(
+        id = `BNK-046`
+        name = `routing_wires_prefix`
+        when_op = `check`
+        when_field = `routing_aba_wires`
+        check_name = `routing_prefix`
+        severity = `CRITICAL`
+        verdict_effect = `REJECT`
+        message = `Wire routing number {value_masked} has a never-assigned Fed prefix: {detail}.`
+        message_ru = `Wire-routing {value_masked} имеет никогда не назначаемый префикс ФРС: {detail}.`
+        tier = `corp`
+      ) TO gt_rules_bank.
   ENDMETHOD.
 
   METHOD build_w9.
@@ -403,6 +489,38 @@ CLASS zcl_mdmdoc_rules_data IMPLEMENTATION.
         verdict_effect = `NEED_MANUAL_REVIEW`
         message = `Internal inconsistency: {detail}. Request clarification or an updated W-9 (rule DR-2026062` &&
         `4-131532).`
+        tier = `corp`
+      ) TO gt_rules_w9.
+    APPEND VALUE #(
+        id = `W9-040`
+        name = `tin_structure_invalid`
+        applies_to = VALUE #(
+          ( `w9` ) )
+        when_op = `check`
+        when_field = `tin_raw`
+        check_name = `tin_structural`
+        severity = `CRITICAL`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `TIN {value} fails US TIN structure: {detail}. Verify the digits against the form image; if` &&
+        ` the form really reads so, request a corrected W-9.`
+        message_ru = `TIN {value} структурно невалиден: {detail}. Сверить с изображением формы; если так и напеч` &&
+        `атано — запросить исправленный W-9.`
+        tier = `corp`
+      ) TO gt_rules_w9.
+    APPEND VALUE #(
+        id = `W9-041`
+        name = `tin_placeholder_fake`
+        applies_to = VALUE #(
+          ( `w9` ) )
+        when_op = `check`
+        when_field = `tin_raw`
+        check_name = `tin_placeholder`
+        severity = `CRITICAL`
+        verdict_effect = `NEED_MANUAL_REVIEW`
+        message = `TIN {value} is a placeholder/known-fake value ({detail}) — not a real TIN. Request the act` &&
+        `ual TIN or an updated W-9.`
+        message_ru = `TIN {value} — заглушка/известный фиктивный номер ({detail}). Запросить настоящий TIN или о` &&
+        `бновлённый W-9.`
         tier = `corp`
       ) TO gt_rules_w9.
     APPEND VALUE #(
