@@ -376,7 +376,7 @@ CLASS zcl_mdmdoc_norm IMPLEMENTATION.
     DATA lv_off TYPE i.
     DATA(lv_len) = strlen( lv_n ).
     WHILE lv_off < lv_len.
-      IF is_digit( lv_n+lv_off(1) ) = abap_true.
+      IF is_digit( substring( val = lv_n off = lv_off len = 1 ) ) = abap_true.
         rv_yes = abap_false.
         RETURN.
       ENDIF.

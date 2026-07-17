@@ -19,7 +19,7 @@ CLASS zcl_mdmdoc_verdict DEFINITION
 
     CLASS-METHODS message_type
       IMPORTING iv_verdict      TYPE string
-      RETURNING VALUE(rv_msgty) TYPE c.
+      RETURNING VALUE(rv_msgty) TYPE string.
 
   PRIVATE SECTION.
     CLASS-METHODS next_step_en

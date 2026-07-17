@@ -150,7 +150,7 @@ CLASS zcl_mdmdoc_pdf DEFINITION
       RETURNING VALUE(rv_char) TYPE string.
     CLASS-METHODS int_to_hex4
       IMPORTING iv_int        TYPE i
-      RETURNING VALUE(rv_hex) TYPE c.
+      RETURNING VALUE(rv_hex) TYPE string.
     CLASS-METHODS char_cp
       IMPORTING iv_char      TYPE string
       RETURNING VALUE(rv_cp) TYPE i.
