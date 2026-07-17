@@ -16,7 +16,7 @@ text — it never decides.
 
 | Layer | Status | Notes |
 |---|---|---|
-| Validator core: 13 classes (+2 generated data classes) + `ZMDMDOC` + `ZMDMDOC_RULES` reports | **DONE, tested** | 209 ABAP Unit tests, all `HARMLESS/SHORT`, no network/file/customizing dependencies |
+| Validator core: 13 classes (+2 generated data classes) + `ZMDMDOC` + `ZMDMDOC_RULES` reports | **DONE, tested** | 238 ABAP Unit tests, all `HARMLESS/SHORT`, no network/file/customizing dependencies |
 | Rules data (`ZCL_MDMDOC_RULES_DATA`) + runtime JSON override | **DONE** | generated from `rules/*.yaml`; see [docs/RULES.md](docs/RULES.md) |
 | Golden parity corpus (`ZCL_MDMDOC_GOLDEN_DATA`) | **DONE** | generated test data proving behavioral parity with the Python reference |
 | PDF text-layer extraction (`ZCL_MDMDOC_PDF`) | **DONE, one on-system check** | `CL_ABAP_GZIP` smoke test is YOUR first task — see §3 item 2 |
@@ -26,7 +26,7 @@ text — it never decides.
 | Customizing table `ZMDMDOC_MAP` | **NOT shipped — create in SE11** | exact DDL in §4; everything works on built-in defaults without it |
 | BAdI enhancement implementation (SE18/SE19 binding) | **NOT shipped — manual** | §3 item 10 |
 
-**Bottom line:** on ANY system you can import, activate the core, run 209 green
+**Bottom line:** on ANY system you can import, activate the core, run 238 green
 tests and validate documents the same day. The MDG scenario is a guided
 implementation project (the seams are isolated, documented and pre-flight-tested
 by `ZMDMDOC_DOCTOR`), not a turnkey install.
@@ -39,7 +39,7 @@ by `ZMDMDOC_DOCTOR`), not a turnkey install.
    `ZMDMDOC_SETUP`, `ZMDMDOC_DOCTOR`, `ZMDMDOC_MDG_DISCOVER`) reference USMD types
    and will not activate — leave them inactive or delete them. The core does not
    need them.
-3. ABAP Unit on the package (`Ctrl+Shift+F10` in ADT): expect **209 green** (recount
+3. ABAP Unit on the package (`Ctrl+Shift+F10` in ADT): expect **238 green** (recount
    on your system — the number grows with updates). Reds
    in the LLM/JSON test classes usually mean `/UI2/CL_JSON` (SAP_UI) is missing.
 4. First verdict: upload `samples/sample_bank_letter.pdf` from this repo to your
@@ -52,7 +52,7 @@ used).
 
 ## 3. On-system checklist (in order)
 
-1. **Import + activate + 209 green tests** (§2).
+1. **Import + activate + 238 green tests** (§2).
 2. **`CL_ABAP_GZIP=>DECOMPRESS_BINARY` smoke test — the #1 risk.** Unit tests
    cover only uncompressed PDFs; real-world PDFs are FlateDecode-compressed.
    First probe ships in the repo: `samples/sample_invoice.pdf` is deliberately

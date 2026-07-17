@@ -55,8 +55,8 @@ MDG scenario (MDG systems only; on other systems these objects do not activate �
 | `ZCL_MDMDOC_ONBOARD` / `ZCL_MDMDOC_SELFTEST` | pre-flight GO/NO-GO checks |
 | `ZMDMDOC_SETUP` / `ZMDMDOC_DOCTOR` / `ZMDMDOC_MDG_DISCOVER` (reports) | onboarding, self-check, MDG model discovery |
 
-Package `ZMDMDOC` total: **5 programs, 2 interfaces, 20 classes** (13 core + 2
-generated + 5 MDG-scenario) + message class `ZMDMDOC`.
+Package `ZMDMDOC` total: **5 programs, 2 interfaces, 21 classes** (13 core + 2
+generated + 6 MDG-scenario) + message class `ZMDMDOC`.
 
 ## Requirements
 
@@ -74,7 +74,7 @@ generated + 5 MDG-scenario) + message class `ZMDMDOC`.
    (table above) reference USMD types and **will not activate** — leave them inactive
    or delete them; the validator core works fully without them. On an MDG system
    everything activates.
-3. Run the package unit tests: `Ctrl+Shift+F10` in ADT — expect **209 green**
+3. Run the package unit tests: `Ctrl+Shift+F10` in ADT — expect **238 green**
    (all `HARMLESS/SHORT`, no network/files; the number grows with updates — recount
    on your system).
 4. Run: SA38 → `ZMDMDOC`. For the first run see `samples/README.md` (demo document).

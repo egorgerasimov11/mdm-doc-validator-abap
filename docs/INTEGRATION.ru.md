@@ -97,13 +97,13 @@
   правил), `ZMDMDOC_SETUP` (onboarding-прогон «всё разом», гл. 11), `ZMDMDOC_DOCTOR`
   (пред-запусковые тесты, гл. 11), `ZMDMDOC_MDG_DISCOVER` (дискавери маппинга MDG, гл. 12).
 - 2 интерфейса: `ZIF_MDMDOC_TYPES`, `ZIF_MDMDOC_SAP_READER`.
-- 20 классов:
+- 21 класс:
   - 13 базовых классов валидатора: `ZCL_MDMDOC_FILE / _PDF / _SNIFF / _REGEX / _LLM / _EXTRACT /
     _RULES / _VERDICT / _MASK / _NORM / _REPORT / _COMPARE / _SAP_MANUAL`;
   - 2 сгенерированных: `ZCL_MDMDOC_RULES_DATA` (правила из YAML), `ZCL_MDMDOC_GOLDEN_DATA`
     (golden-корпус тестовых данных);
-  - 5 классов MDG-сценария: `ZCL_MDMDOC_MDG_READER`, `ZCL_MDMDOC_MDG_MAP`, `ZCL_MDMDOC_ONBOARD`,
-    `ZCL_MDG_BP_FIELD_DERR_VAL`, `ZCL_MDMDOC_SELFTEST`.
+  - 6 классов MDG-сценария: `ZCL_MDMDOC_MDG_READER`, `ZCL_MDMDOC_MDG_MAP`, `ZCL_MDMDOC_MDG_CHECK`,
+    `ZCL_MDMDOC_ONBOARD`, `ZCL_MDG_BP_FIELD_DERR_VAL`, `ZCL_MDMDOC_SELFTEST`.
 - Класс сообщений (если добавлен) `ZMDMDOC` для текстов вердикта.
 
 ### 2.5. Проверка после импорта
@@ -553,7 +553,7 @@ STREET→street, CITY1→city, TAXNUM→tin…) и **предлагает** ма
 ### 13.2. ABAP Unit тесты (в системе: Ctrl+Shift+F10 на пакете)
 
 Локальные тест-классы у каждого класса, `RISK LEVEL HARMLESS DURATION SHORT`, без сети/файлов/GUI.
-Всего **209 тест-методов** (пересчитайте на своей системе прогоном ABAP Unit по пакету —
+Всего **238 тест-методов** (пересчитайте на своей системе прогоном ABAP Unit по пакету —
 число растёт с обновлениями):
 
 | Класс | Тестов | Покрытие |
@@ -579,7 +579,7 @@ STREET→street, CITY1→city, TAXNUM→tin…) и **предлагает** ма
 
 ### 13.3. Рекомендуемый порядок при внедрении
 
-1. Импорт пакета → активация → **ABAP Unit** на пакете (Ctrl+Shift+F10) — все 209 тестов
+1. Импорт пакета → активация → **ABAP Unit** на пакете (Ctrl+Shift+F10) — все 238 тестов
    зелёные (число растёт с обновлениями).
 2. **ZMDMDOC_SETUP** без `p_cr` — ядро + дискавери зелёные, посмотреть предложенный маппинг.
 3. При необходимости создать/заполнить `ZMDMDOC_MAP`, повторить `ZMDMDOC_SETUP` с `p_save`.

@@ -84,13 +84,13 @@ dependencies are the interface `ZIF_MDMDOC_TYPES` (part of the package) and the 
   the rules), `ZMDMDOC_SETUP` (all-in-one onboarding run, ch. 11), `ZMDMDOC_DOCTOR`
   (pre-flight tests, ch. 11), `ZMDMDOC_MDG_DISCOVER` (MDG mapping discovery, ch. 12).
 - 2 interfaces: `ZIF_MDMDOC_TYPES`, `ZIF_MDMDOC_SAP_READER`.
-- 20 classes:
+- 21 classes:
   - 13 core validator classes: `ZCL_MDMDOC_FILE / _PDF / _SNIFF / _REGEX / _LLM / _EXTRACT /
     _RULES / _VERDICT / _MASK / _NORM / _REPORT / _COMPARE / _SAP_MANUAL`;
   - 2 generated: `ZCL_MDMDOC_RULES_DATA` (the rules from YAML), `ZCL_MDMDOC_GOLDEN_DATA`
     (golden corpus of test data);
-  - 5 MDG-scenario classes: `ZCL_MDMDOC_MDG_READER`, `ZCL_MDMDOC_MDG_MAP`, `ZCL_MDMDOC_ONBOARD`,
-    `ZCL_MDG_BP_FIELD_DERR_VAL`, `ZCL_MDMDOC_SELFTEST`.
+  - 6 MDG-scenario classes: `ZCL_MDMDOC_MDG_READER`, `ZCL_MDMDOC_MDG_MAP`, `ZCL_MDMDOC_MDG_CHECK`,
+    `ZCL_MDMDOC_ONBOARD`, `ZCL_MDG_BP_FIELD_DERR_VAL`, `ZCL_MDMDOC_SELFTEST`.
 - Message class (if added) `ZMDMDOC` for the verdict texts.
 
 ### 2.5. Post-import check
@@ -598,7 +598,7 @@ Each check is independent and returns PASS / FAIL / SKIP.
 ### 13.2. ABAP Unit tests (in the system: Ctrl+Shift+F10 on the package)
 
 Local test classes on every class, `RISK LEVEL HARMLESS DURATION SHORT`, no network/files/GUI.
-**209 test methods** in total (recount on your system with the package-level ABAP Unit run —
+**238 test methods** in total (recount on your system with the package-level ABAP Unit run —
 the number grows with updates):
 
 | Class | Tests | Coverage |
@@ -624,7 +624,7 @@ excluded as verify-on-system). ABAP Unit runs only on the system.
 
 ### 13.3. Recommended order during rollout
 
-1. Import the package → activation → **ABAP Unit** on the package (Ctrl+Shift+F10) — all 209 tests
+1. Import the package → activation → **ABAP Unit** on the package (Ctrl+Shift+F10) — all 238 tests
    green (the number grows with updates).
 2. **ZMDMDOC_SETUP** without `p_cr` — core + discovery green, review the proposed mapping.
 3. If needed, create/fill `ZMDMDOC_MAP`, repeat `ZMDMDOC_SETUP` with `p_save`.
