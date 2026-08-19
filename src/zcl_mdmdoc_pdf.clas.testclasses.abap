@@ -138,6 +138,7 @@ CLASS ltcl_pdf IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
     cl_abap_unit_assert=>assert_true( lv_seen ).
+    cl_abap_unit_assert=>assert_initial( lv_text ).
   ENDMETHOD.
 
   METHOD latin1_roundtrip.

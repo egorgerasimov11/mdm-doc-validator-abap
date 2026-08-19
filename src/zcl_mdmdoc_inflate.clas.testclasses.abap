@@ -16,6 +16,11 @@ CLASS ltcl_inflate DEFINITION FINAL FOR TESTING
     METHODS overlapping_match  FOR TESTING.
     METHODS corrupt_no_dump    FOR TESTING.
     METHODS not_zlib_rejected  FOR TESTING.
+    " adversarial-review counter-fixtures (Codex, C-2026-08-20-01): reference zlib
+    " rejects each of these — the decoder must too, never returning ev_ok = true
+    METHODS stored_bad_nlen    FOR TESTING.
+    METHODS oversubscribed_dyn FOR TESTING.
+    METHODS truncated_zlib     FOR TESTING.
 ENDCLASS.
 
 CLASS ltcl_inflate IMPLEMENTATION.
@@ -107,6 +112,44 @@ CLASS ltcl_inflate IMPLEMENTATION.
       EXPORTING iv_data = lv_gz
       IMPORTING ev_deflate = DATA(lv_deflate) ev_is_zlib = DATA(lv_is_zlib) ).
     cl_abap_unit_assert=>assert_false( lv_is_zlib ).
+  ENDMETHOD.
+
+  METHOD stored_bad_nlen.
+    " stored block whose NLEN is not the one's complement of LEN (RFC 1951)
+    DATA lv_bad TYPE xstring.
+    lv_bad = '010100000041'.
+    zcl_mdmdoc_inflate=>decompress(
+      EXPORTING iv_data = lv_bad
+      IMPORTING ev_raw = DATA(lv_raw) ev_ok = DATA(lv_ok) ).
+    cl_abap_unit_assert=>assert_false( lv_ok ).
+  ENDMETHOD.
+
+  METHOD oversubscribed_dyn.
+    " dynamic block with an invalid (incomplete/oversubscribed) code-lengths set
+    DATA lv_bad TYPE xstring.
+    lv_bad = '05C0010900000000A0FEAD15'.
+    zcl_mdmdoc_inflate=>decompress(
+      EXPORTING iv_data = lv_bad
+      IMPORTING ev_raw = DATA(lv_raw) ev_ok = DATA(lv_ok) ).
+    cl_abap_unit_assert=>assert_false( lv_ok ).
+  ENDMETHOD.
+
+  METHOD truncated_zlib.
+    " truncated zlib member: the Adler trailer must not be able to complete the
+    " deflate payload (unwrap_zlib strips it; what remains is one lone byte)
+    DATA lv_z TYPE xstring.
+    lv_z = '789C0300000001'.
+    DATA lv_accepted TYPE abap_bool.
+    zcl_mdmdoc_inflate=>unwrap_zlib(
+      EXPORTING iv_data = lv_z
+      IMPORTING ev_deflate = DATA(lv_deflate) ev_is_zlib = DATA(lv_is_zlib) ).
+    IF lv_is_zlib = abap_true.
+      zcl_mdmdoc_inflate=>decompress(
+        EXPORTING iv_data = lv_deflate
+        IMPORTING ev_raw = DATA(lv_raw) ev_ok = DATA(lv_ok) ).
+      lv_accepted = lv_ok.
+    ENDIF.
+    cl_abap_unit_assert=>assert_false( lv_accepted ).
   ENDMETHOD.
 
 ENDCLASS.

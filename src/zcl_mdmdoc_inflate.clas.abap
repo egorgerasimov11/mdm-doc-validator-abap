@@ -30,10 +30,12 @@ CLASS zcl_mdmdoc_inflate DEFINITION
   PRIVATE SECTION.
     TYPES tt_int TYPE STANDARD TABLE OF i WITH EMPTY KEY.
     " canonical Huffman code: count = codes per bit-length (line L+1 = length L, 0..15),
-    " sym = symbols ordered by (code length, symbol value)
+    " sym = symbols ordered by (code length, symbol value), left = puff's validity
+    " residue (0 complete, >0 incomplete, <0 oversubscribed = invalid)
     TYPES: BEGIN OF ty_huff,
              count TYPE tt_int,
              sym   TYPE tt_int,
+             left  TYPE i,
            END OF ty_huff.
 
     " decode state (one instance per decompress call; static entry keeps callers simple)
@@ -161,7 +163,7 @@ CLASS zcl_mdmdoc_inflate IMPLEMENTATION.
     ev_is_zlib = abap_false.
     DATA lv_len TYPE i.
     lv_len = xstrlen( iv_data ).
-    IF lv_len < 7.                       " 2 header + 1 minimal deflate + 4 adler
+    IF lv_len < 8.                       " 2 header + minimal 2-byte deflate + 4 adler
       RETURN.
     ENDIF.
     DATA lv_cmf TYPE i.
@@ -171,14 +173,19 @@ CLASS zcl_mdmdoc_inflate IMPLEMENTATION.
     IF lv_cmf MOD 16 <> 8.               " CM must be 'deflate'
       RETURN.
     ENDIF.
+    IF lv_cmf DIV 16 > 7.                " CINFO > 7 is invalid per RFC 1950
+      RETURN.
+    ENDIF.
     IF ( lv_cmf * 256 + lv_flg ) MOD 31 <> 0.
       RETURN.
     ENDIF.
     IF ( lv_flg DIV 32 ) MOD 2 = 1.      " FDICT: preset dictionary — undecodable
       RETURN.
     ENDIF.
+    " strip BOTH the 2-byte header and the 4-byte Adler32 trailer: checksum bytes
+    " must never be able to complete a truncated deflate payload
     DATA lv_plen TYPE i.
-    lv_plen = lv_len - 2.
+    lv_plen = lv_len - 6.
     ev_deflate = iv_data+2(lv_plen).
     ev_is_zlib = abap_true.
   ENDMETHOD.
@@ -247,6 +254,21 @@ CLASS zcl_mdmdoc_inflate IMPLEMENTATION.
       lt_count[ lv_len + 1 ] = lt_count[ lv_len + 1 ] + 1.
     ENDLOOP.
     lt_count[ 1 ] = 0.                   " length 0 = unused symbol
+
+    " puff validity residue: negative = oversubscribed (always invalid)
+    DATA lv_left TYPE i.
+    lv_left = 1.
+    DATA lv_l2 TYPE i.
+    DO 15 TIMES.
+      lv_l2 = sy-index.
+      lv_left = lv_left * 2 - lt_count[ lv_l2 + 1 ].
+      IF lv_left < 0.
+        rs_huff-count = lt_count.
+        rs_huff-left  = lv_left.
+        RETURN.
+      ENDIF.
+    ENDDO.
+    rs_huff-left = lv_left.
 
     DATA lt_offs TYPE tt_int.
     DO 17 TIMES.
@@ -382,6 +404,18 @@ CLASS zcl_mdmdoc_inflate IMPLEMENTATION.
     lv_b1 = mv_data+lv_p1(1).
     DATA lv_ln TYPE i.
     lv_ln = lv_b0 + lv_b1 * 256.
+    DATA lv_p2 TYPE i.
+    DATA lv_p3 TYPE i.
+    lv_p2 = mv_pos + 2.
+    lv_p3 = mv_pos + 3.
+    lv_b0 = mv_data+lv_p2(1).
+    lv_b1 = mv_data+lv_p3(1).
+    DATA lv_nln TYPE i.
+    lv_nln = lv_b0 + lv_b1 * 256.
+    IF lv_ln + lv_nln <> 65535.          " RFC 1951: NLEN is the one's complement of LEN
+      mv_err = abap_true.
+      RETURN.
+    ENDIF.
     mv_pos = mv_pos + 4.
     IF mv_pos + lv_ln > mv_len.
       mv_err = abap_true.
@@ -424,6 +458,10 @@ CLASS zcl_mdmdoc_inflate IMPLEMENTATION.
     ENDIF.
     DATA ls_cl TYPE ty_huff.
     ls_cl = construct( lt_cl ).
+    IF ls_cl-left <> 0.                  " puff: the code-length code must be COMPLETE
+      mv_err = abap_true.
+      RETURN.
+    ENDIF.
 
     " literal/length + distance code lengths, with 16/17/18 repeat operators
     DATA lt_lengths TYPE tt_int.
@@ -477,17 +515,34 @@ CLASS zcl_mdmdoc_inflate IMPLEMENTATION.
 
     DATA lt_ll TYPE tt_int.
     DATA lt_dd TYPE tt_int.
+    DATA lv_ll01 TYPE i.                 " literal/length symbols of code length 0 or 1
+    DATA lv_dd01 TYPE i.                 " distance symbols of code length 0 or 1
     LOOP AT lt_lengths INTO lv_sym.
       IF sy-tabix <= lv_nlen.
         APPEND lv_sym TO lt_ll.
+        IF lv_sym <= 1.
+          lv_ll01 = lv_ll01 + 1.
+        ENDIF.
       ELSE.
         APPEND lv_sym TO lt_dd.
+        IF lv_sym <= 1.
+          lv_dd01 = lv_dd01 + 1.
+        ENDIF.
       ENDIF.
     ENDLOOP.
     DATA ls_len  TYPE ty_huff.
     DATA ls_dist TYPE ty_huff.
-    ls_len  = construct( lt_ll ).
+    " puff: oversubscribed never; incomplete only for a single length-1 code
+    ls_len = construct( lt_ll ).
+    IF ls_len-left <> 0 AND ( ls_len-left < 0 OR lv_nlen <> lv_ll01 ).
+      mv_err = abap_true.
+      RETURN.
+    ENDIF.
     ls_dist = construct( lt_dd ).
+    IF ls_dist-left <> 0 AND ( ls_dist-left < 0 OR lv_ndist <> lv_dd01 ).
+      mv_err = abap_true.
+      RETURN.
+    ENDIF.
     codes( is_len = ls_len is_dist = ls_dist ).
   ENDMETHOD.
 
