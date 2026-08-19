@@ -14,7 +14,7 @@ F8. No LLM, no customizing, no `ZMDMDOC_MAP` needed — everything below is the
 
 An unsigned bank confirmation letter with a typed officer block
 ("Jordan Q. Sample, Vice President …"). The PDF text layer is deliberately
-**uncompressed**, so this demo works even before the gzip check (see §2).
+**uncompressed**, so this demo works even if inflate is broken (see §2).
 
 Expected result:
 
@@ -32,11 +32,11 @@ With the optional LLM leg enabled the same letter fills `account_holder` /
 `bank_name` and the two findings clear. Note that `BNK-021` (unsigned, no
 compensating evidence) correctly does NOT fire — the officer block counts.
 
-## 2. `sample_invoice.pdf` — REJECT demo + gzip smoke test
+## 2. `sample_invoice.pdf` — REJECT demo + inflate smoke test
 
 An invoice carrying an IBAN — the classic "invoice used as bank proof" case.
 This PDF is deliberately **FlateDecode-compressed**: reading it exercises the
-`CL_ABAP_GZIP` kernel path (on-system checklist item 2 in
+pure-ABAP `ZCL_MDMDOC_INFLATE` decoder (on-system checklist item 2 in
 [../HANDOFF.md](../HANDOFF.md)).
 
 Expected result:
@@ -46,10 +46,12 @@ Expected result:
 | Verdict | **REJECT** |
 | `BNK-001` | CRITICAL → REJECT — invoice used as banking support |
 
-If instead you get "no text layer" warnings and empty fields, the gzip
-decompression path needs investigation (HANDOFF §3 item 2) — the file itself
-is fine. Still run the smoke test on a REAL vendor PDF afterwards; real-world
-files vary more than this sample.
+If instead you get "no text layer" warnings and empty fields, run
+`ZMDMDOC_DOCTOR` — its inflate and codepage checks say which leg broke
+(HANDOFF §3 item 2); the file itself is fine. Exactly this symptom on real
+documents was case C-2026-08-20-01, fixed by replacing the kernel-only inflate
+chain with `ZCL_MDMDOC_INFLATE`. Still run the smoke test on a REAL vendor PDF
+afterwards; real-world files vary more than this sample.
 
 ## Keeping expectations honest
 

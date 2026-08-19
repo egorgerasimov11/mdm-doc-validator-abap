@@ -235,12 +235,13 @@ the `ty_doc` structure.
 
 Verify in this order — from the riskiest item to the standard ones:
 
-1. **`CL_ABAP_GZIP=>DECOMPRESS_BINARY` with zlib streams (RFC 1950).**
-   PDF uses FlateDecode = zlib, not gzip. `ZCL_MDMDOC_PDF` tries three inflation strategies
-   (direct → strip the zlib header + synthetic gzip envelope → synthetic ZIP via
-   `CL_ABAP_ZIP`). If all three fail on your kernel — only PDFs with uncompressed streams are
-   readable; the workaround is in the README (re-export the PDF via "print to PDF"). Test on a
-   real compressed PDF in dev.
+1. **Inflating zlib streams (RFC 1950) — `ZCL_MDMDOC_INFLATE`.**
+   PDF uses FlateDecode = zlib, not gzip. The kernel classes cannot do this: they verify
+   checksums (gzip CRC32, ZIP CRC) that a bare zlib stream does not carry — this risk
+   materialized as case C-2026-08-20-01. Decompression runs through the pure-ABAP
+   `ZCL_MDMDOC_INFLATE` (no CRC checks); `CL_ABAP_GZIP` stays as a cheap first try for
+   genuine gzip data. Verify via the `inflate` and `codepage` checks in `ZMDMDOC_DOCTOR`,
+   then a real compressed PDF in dev.
 2. **`/UI2/CL_JSON`** is present (SAP_UI component). Missing → LLM/JSON/override are disabled,
    the core works.
 3. **`CL_ABAP_ZIP`** — behaviour on a CRC mismatch (for `.zip` containers and PDF strategy 3).

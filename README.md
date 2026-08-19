@@ -175,10 +175,11 @@ Full guide: [docs/RULES.md](docs/RULES.md).
 - `.msg` (Outlook) is not supported — re-save as `.eml` or extract the attachment (`EXT-005`).
 - Text order ≈ object order inside the PDF (sufficient for keyword scoring and
   label-window regex; not for human reading).
-- First things to verify on the target system: `CL_ABAP_GZIP=>DECOMPRESS_BINARY` with
-  zlib streams (RFC 1950) — compressed-PDF reading depends on it (three fallback
-  strategies inside `ZCL_MDMDOC_PDF`); then `/UI2/CL_JSON`; then `CL_ABAP_ZIP` behavior
-  on CRC mismatch. Everything else is standard since 7.40.
+- Compressed PDFs (zlib /FlateDecode, RFC 1950) are decoded by the pure-ABAP
+  `ZCL_MDMDOC_INFLATE` — the kernel classes cannot finish a bare zlib stream because
+  they verify checksums it does not carry. `ZMDMDOC_DOCTOR` prints the inflate and
+  codepage-transparency checks. First things to verify on the target system: those two
+  checks, then `/UI2/CL_JSON`. Everything else is standard since 7.40.
 
 ## Change Request comparison (MDG)
 

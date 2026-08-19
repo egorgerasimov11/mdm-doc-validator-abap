@@ -43,25 +43,6 @@ CLASS zcl_mdmdoc_pdf DEFINITION
       IMPORTING iv_zlib TYPE xstring
       EXPORTING ev_raw  TYPE xstring
                 ev_ok   TYPE abap_bool.
-    " little-endian N-byte encoding of a non-negative integer
-    CLASS-METHODS le_bytes
-      IMPORTING iv_val      TYPE i
-                iv_bytes    TYPE i
-      RETURNING VALUE(rv_x) TYPE xstring.
-    " append raw bytes to an xstring accumulator
-    CLASS-METHODS xadd
-      IMPORTING iv_add TYPE xstring
-      CHANGING  cv_x   TYPE xstring.
-    " append the bytes described by an ASCII hex string (e.g. '504B0304')
-    CLASS-METHODS xadd_hex
-      IMPORTING iv_hex TYPE string
-      CHANGING  cv_x   TYPE xstring.
-    " assemble a minimal one-entry ZIP whose single member 'd' stores the given raw
-    " deflate payload (compression method 8). CRC is left 0 (spec: tolerate CRC).
-    CLASS-METHODS build_deflate_zip
-      IMPORTING iv_deflate  TYPE xstring
-                iv_raw_len  TYPE i
-      RETURNING VALUE(rv_x) TYPE xstring.
 
     " ---- structure helpers --------------------------------------------------
     CLASS-METHODS count_pages
@@ -158,9 +139,6 @@ CLASS zcl_mdmdoc_pdf DEFINITION
       IMPORTING iv_hex        TYPE string
       RETURNING VALUE(rv_str) TYPE string.
 
-    " Minimal 10-byte gzip header: ID1 ID2 CM FLG MTIME(4) XFL OS(=3 unix).
-    CONSTANTS c_gzip_hdr  TYPE xstring VALUE '1F8B0800000000000003'.
-    CONSTANTS c_zero8     TYPE xstring VALUE '0000000000000000'.
 ENDCLASS.
 
 
@@ -387,10 +365,14 @@ CLASS zcl_mdmdoc_pdf IMPLEMENTATION.
 
 
   METHOD inflate.
+    " The kernel classes verify checksums the caller cannot supply for a bare
+    " /FlateDecode stream (gzip CRC32, ZIP CRC) — see C-2026-08-20-01. So: try the
+    " kernel gzip path only for genuine gzip data, then decode the zlib envelope
+    " with the checksum-free pure-ABAP inflater.
     CLEAR ev_raw.
     ev_ok = abap_false.
 
-    " (a) decompress raw bytes directly
+    " (a) the stream may genuinely be gzip — cheap to try
     TRY.
         cl_abap_gzip=>decompress_binary( EXPORTING gzip_in = iv_zlib
                                          IMPORTING raw_out = ev_raw ).
@@ -400,192 +382,29 @@ CLASS zcl_mdmdoc_pdf IMPLEMENTATION.
         CLEAR ev_raw.
     ENDTRY.
 
-    DATA lv_len TYPE i.
-    lv_len = xstrlen( iv_zlib ).
-    IF lv_len <= 6.
-      RETURN.
+    " (b) the normal case: a zlib envelope (RFC 1950) around raw deflate
+    DATA lv_deflate TYPE xstring.
+    DATA lv_is_zlib TYPE abap_bool.
+    zcl_mdmdoc_inflate=>unwrap_zlib( EXPORTING iv_data    = iv_zlib
+                                     IMPORTING ev_deflate = lv_deflate
+                                               ev_is_zlib = lv_is_zlib ).
+    IF lv_is_zlib = abap_true.
+      zcl_mdmdoc_inflate=>decompress( EXPORTING iv_data = lv_deflate
+                                      IMPORTING ev_raw  = ev_raw
+                                                ev_ok   = ev_ok ).
+      IF ev_ok = abap_true.
+        RETURN.
+      ENDIF.
+      CLEAR ev_raw.
     ENDIF.
 
-    " raw deflate payload = zlib bytes minus 2-byte header and 4-byte adler trailer
-    DATA lv_payload_len TYPE i.
-    lv_payload_len = lv_len - 6.
-    DATA lv_deflate TYPE xstring.
-    lv_deflate = iv_zlib+2(lv_payload_len).
-
-    " (b) wrap the raw deflate payload in a minimal gzip container, retry
-    TRY.
-        DATA lv_gzip TYPE xstring.
-        CONCATENATE c_gzip_hdr lv_deflate c_zero8 INTO lv_gzip IN BYTE MODE.
-        cl_abap_gzip=>decompress_binary( EXPORTING gzip_in = lv_gzip
-                                         IMPORTING raw_out = ev_raw ).
-        ev_ok = abap_true.
-        RETURN.
-      CATCH cx_root.
-        CLEAR ev_raw.
-    ENDTRY.
-
-    " (c) build a synthetic one-entry ZIP archive around the raw-deflate bytes with
-    "     cl_abap_zip and read it back (tolerate CRC issues via TRY/CATCH).
-    TRY.
-        DATA lv_zip_arc TYPE xstring.
-        lv_zip_arc = build_deflate_zip( iv_deflate = lv_deflate iv_raw_len = lv_payload_len ).
-        DATA lo_zip TYPE REF TO cl_abap_zip.
-        CREATE OBJECT lo_zip.
-        lo_zip->load( EXPORTING zip = lv_zip_arc
-                      EXCEPTIONS zip_parse_error = 1 OTHERS = 2 ).
-        IF sy-subrc = 0.
-          lo_zip->get( EXPORTING name = 'd'
-                       IMPORTING content = ev_raw
-                       EXCEPTIONS zip_index_error = 1 zip_decompression_error = 2 OTHERS = 3 ).
-          IF sy-subrc = 0 AND xstrlen( ev_raw ) > 0.
-            ev_ok = abap_true.
-            RETURN.
-          ENDIF.
-        ENDIF.
-        CLEAR ev_raw.
-      CATCH cx_root.
-        CLEAR ev_raw.
-    ENDTRY.
-
-    ev_ok = abap_false.
-  ENDMETHOD.
-
-
-  METHOD le_bytes.
-    " Encode iv_val as iv_bytes little-endian bytes.
-    CLEAR rv_x.
-    DATA lv_v TYPE i.
-    lv_v = iv_val.
-    DATA lv_i TYPE i VALUE 0.
-    WHILE lv_i < iv_bytes.
-      DATA lv_byte TYPE x LENGTH 1.
-      lv_byte = lv_v MOD 256.
-      DATA lv_bx TYPE xstring.
-      lv_bx = lv_byte.
-      CONCATENATE rv_x lv_bx INTO rv_x IN BYTE MODE.
-      lv_v = lv_v DIV 256.
-      lv_i = lv_i + 1.
-    ENDWHILE.
-  ENDMETHOD.
-
-
-  METHOD xadd.
-    " Append the bytes of iv_add to the xstring accumulator cv_x.
-    CONCATENATE cv_x iv_add INTO cv_x IN BYTE MODE.
-  ENDMETHOD.
-
-
-  METHOD xadd_hex.
-    " Append the bytes described by an ASCII hex string (even length) to cv_x.
-    DATA lv_len TYPE i.
-    lv_len = strlen( iv_hex ).
-    DATA lv_pos TYPE i VALUE 0.
-    WHILE lv_pos + 2 <= lv_len.
-      DATA lv_pair TYPE string.
-      lv_pair = substring( val = iv_hex off = lv_pos len = 2 ).
-      DATA lv_byte TYPE x LENGTH 1.
-      lv_byte = hex_str_to_int( lv_pair ).
-      DATA lv_bx TYPE xstring.
-      lv_bx = lv_byte.
-      CONCATENATE cv_x lv_bx INTO cv_x IN BYTE MODE.
-      lv_pos = lv_pos + 2.
-    ENDWHILE.
-  ENDMETHOD.
-
-
-  METHOD build_deflate_zip.
-    " Minimal ZIP: [local file header][deflate data][central dir][EOCD].
-    " Single member name 'd', compression method 8 (deflate), CRC 0, sizes filled.
-    " All byte assembly goes through xadd/xadd_hex so only xstring data objects are
-    " concatenated (functional method-call operands are rejected by the parser).
-    CONSTANTS lc_name TYPE string VALUE `d`.
-    DATA lv_name_x TYPE xstring.
-    lv_name_x = latin1_to_bytes( lc_name ).
-    DATA lv_name_len TYPE i.
-    lv_name_len = xstrlen( lv_name_x ).
-
-    DATA lv_tmp TYPE xstring.
-
-    " --- local file header (signature 0x04034b50) ---
-    DATA lv_lfh TYPE xstring.
-    xadd_hex( EXPORTING iv_hex = `504B0304` CHANGING cv_x = lv_lfh ). " signature
-    xadd_hex( EXPORTING iv_hex = `1400`     CHANGING cv_x = lv_lfh ). " version needed (20)
-    xadd_hex( EXPORTING iv_hex = `0000`     CHANGING cv_x = lv_lfh ). " gp bit flag
-    xadd_hex( EXPORTING iv_hex = `0800`     CHANGING cv_x = lv_lfh ). " method 8 (deflate)
-    xadd_hex( EXPORTING iv_hex = `00000000` CHANGING cv_x = lv_lfh ). " mod time + date
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 4 ).                     " CRC-32
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_lfh ).
-    lv_tmp = le_bytes( iv_val = iv_raw_len iv_bytes = 4 ).            " comp size
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_lfh ).
-    lv_tmp = le_bytes( iv_val = iv_raw_len iv_bytes = 4 ).            " uncomp size (best effort)
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_lfh ).
-    lv_tmp = le_bytes( iv_val = lv_name_len iv_bytes = 2 ).          " file name length
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_lfh ).
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 2 ).                    " extra field length
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_lfh ).
-    xadd( EXPORTING iv_add = lv_name_x CHANGING cv_x = lv_lfh ).
-
-    DATA lv_data_off TYPE i VALUE 0.     " local header starts at offset 0
-
-    " --- file data ---
-    DATA lv_body TYPE xstring.
-    xadd( EXPORTING iv_add = lv_lfh     CHANGING cv_x = lv_body ).
-    xadd( EXPORTING iv_add = iv_deflate CHANGING cv_x = lv_body ).
-
-    " --- central directory header (signature 0x02014b50) ---
-    DATA lv_cd TYPE xstring.
-    xadd_hex( EXPORTING iv_hex = `504B0102` CHANGING cv_x = lv_cd ). " signature
-    xadd_hex( EXPORTING iv_hex = `1400`     CHANGING cv_x = lv_cd ). " version made by
-    xadd_hex( EXPORTING iv_hex = `1400`     CHANGING cv_x = lv_cd ). " version needed
-    xadd_hex( EXPORTING iv_hex = `0000`     CHANGING cv_x = lv_cd ). " gp flag
-    xadd_hex( EXPORTING iv_hex = `0800`     CHANGING cv_x = lv_cd ). " method deflate
-    xadd_hex( EXPORTING iv_hex = `00000000` CHANGING cv_x = lv_cd ). " time + date
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 4 ).                    " CRC-32
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = iv_raw_len iv_bytes = 4 ).           " comp size
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = iv_raw_len iv_bytes = 4 ).           " uncomp size
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = lv_name_len iv_bytes = 2 ).          " name length
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 2 ).                    " extra length
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 2 ).                    " comment length
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 2 ).                    " disk number start
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 2 ).                    " internal attrs
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 4 ).                    " external attrs
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    lv_tmp = le_bytes( iv_val = lv_data_off iv_bytes = 4 ).          " local header offset
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_cd ).
-    xadd( EXPORTING iv_add = lv_name_x CHANGING cv_x = lv_cd ).
-
-    DATA lv_cd_off TYPE i.
-    lv_cd_off = xstrlen( lv_body ).
-    DATA lv_cd_len TYPE i.
-    lv_cd_len = xstrlen( lv_cd ).
-
-    " --- end of central directory (signature 0x06054b50) ---
-    DATA lv_eocd TYPE xstring.
-    xadd_hex( EXPORTING iv_hex = `504B0506` CHANGING cv_x = lv_eocd ). " signature
-    xadd_hex( EXPORTING iv_hex = `0000`     CHANGING cv_x = lv_eocd ). " disk number
-    xadd_hex( EXPORTING iv_hex = `0000`     CHANGING cv_x = lv_eocd ). " cd start disk
-    lv_tmp = le_bytes( iv_val = 1 iv_bytes = 2 ).                     " entries on this disk
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_eocd ).
-    lv_tmp = le_bytes( iv_val = 1 iv_bytes = 2 ).                     " total entries
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_eocd ).
-    lv_tmp = le_bytes( iv_val = lv_cd_len iv_bytes = 4 ).             " cd size
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_eocd ).
-    lv_tmp = le_bytes( iv_val = lv_cd_off iv_bytes = 4 ).             " cd offset
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_eocd ).
-    lv_tmp = le_bytes( iv_val = 0 iv_bytes = 2 ).                     " comment length
-    xadd( EXPORTING iv_add = lv_tmp CHANGING cv_x = lv_eocd ).
-
-    xadd( EXPORTING iv_add = lv_body CHANGING cv_x = rv_x ).
-    xadd( EXPORTING iv_add = lv_cd   CHANGING cv_x = rv_x ).
-    xadd( EXPORTING iv_add = lv_eocd CHANGING cv_x = rv_x ).
+    " (c) last resort: treat the bytes as bare raw deflate
+    zcl_mdmdoc_inflate=>decompress( EXPORTING iv_data = iv_zlib
+                                    IMPORTING ev_raw  = ev_raw
+                                              ev_ok   = ev_ok ).
+    IF ev_ok = abap_false.
+      CLEAR ev_raw.
+    ENDIF.
   ENDMETHOD.
 
 

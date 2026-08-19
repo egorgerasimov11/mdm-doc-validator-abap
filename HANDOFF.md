@@ -53,13 +53,15 @@ used).
 ## 3. On-system checklist (in order)
 
 1. **Import + activate + 238 green tests** (§2).
-2. **`CL_ABAP_GZIP=>DECOMPRESS_BINARY` smoke test — the #1 risk.** Unit tests
-   cover only uncompressed PDFs; real-world PDFs are FlateDecode-compressed.
-   First probe ships in the repo: `samples/sample_invoice.pdf` is deliberately
-   compressed — expect verdict REJECT/`BNK-001`; empty text instead means the
-   kernel's zlib path needs investigation. Then repeat on a REAL vendor PDF
-   (they vary more). `ZCL_MDMDOC_PDF` already tries three inflate strategies;
-   workaround: print-to-PDF re-save, or the LLM-vision path.
+2. **Compressed-PDF smoke test.** History: the former kernel-only inflate chain
+   could not finish a bare zlib stream (the kernel verifies checksums a
+   /FlateDecode stream does not carry) — every real-world PDF fell back to
+   manual review (case C-2026-08-20-01). Decoding now runs through the pure-ABAP
+   `ZCL_MDMDOC_INFLATE` (no CRC), covered by unit tests with real zlib fixtures
+   and by two `ZCL_MDMDOC_SELFTEST` checks (zlib inflate + codepage-1100 byte
+   transparency) printed by `ZMDMDOC_DOCTOR`. On-system confirmation:
+   `samples/sample_invoice.pdf` is deliberately compressed — expect verdict
+   REJECT/`BNK-001` with extracted text. Then repeat on a REAL vendor PDF.
 3. **`/UI2/CL_JSON` present?** Standard since 7.40 SP08. Without it the core still
    validates; LLM, JSON export and the rules override are disabled.
 4. **Optional LLM:** stand up Ollama reachable **from the application server**
@@ -142,8 +144,8 @@ BP_BANKDT.BANKN`, `control_key → BP_BANKDT.BKONT`, `iban → BP_BANKDT.IBAN`,
 
 See README "Limitations". Highlights: no scanned-PDF OCR inside ABAP (LLM-vision
 or external OCR required); CID fonts without ToUnicode are skipped with a
-warning; `.msg` unsupported (re-save as `.eml`); compressed-PDF reading depends
-on the `CL_ABAP_GZIP` smoke test (§3 item 2).
+warning; `.msg` unsupported (re-save as `.eml`); compressed-PDF reading is
+handled by the pure-ABAP `ZCL_MDMDOC_INFLATE` — confirm once on-system (§3 item 2).
 
 ## 8. Where everything is
 
