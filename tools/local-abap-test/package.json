@@ -1,0 +1,12 @@
+{
+  "name": "mdmdoc-local-abap-test",
+  "private": true,
+  "description": "Transpile ZMDMDOC classes and run ABAP Unit under Node (see README.md)",
+  "scripts": {
+    "test": "python3 prepare.py && abap_transpile abap_transpile.json && node --expose-gc output/index.mjs && echo GREEN"
+  },
+  "devDependencies": {
+    "@abaplint/transpiler-cli": "^2.13.60",
+    "@abaplint/runtime": "^2.13.60"
+  }
+}

@@ -947,7 +947,9 @@ CLASS zcl_mdmdoc_pdf IMPLEMENTATION.
       DATA lv_ch TYPE string.
       lv_ch = substring( val = iv_buf off = lv_i len = 1 ).
       IF lv_ch = `(`.
-        DATA lv_depth TYPE i VALUE 1.
+        DATA lv_depth TYPE i.
+        lv_depth = 1.          " assignment, not DATA..VALUE: a declaration
+                               " initializes once per call, not per iteration
         lv_i = lv_i + 1.
         WHILE lv_i < lv_len AND lv_depth > 0.
           DATA lv_cj TYPE string.
@@ -981,7 +983,9 @@ CLASS zcl_mdmdoc_pdf IMPLEMENTATION.
       DATA lv_ch TYPE string.
       lv_ch = substring( val = iv_arr off = lv_i len = 1 ).
       IF lv_ch = `(`.
-        DATA lv_depth TYPE i VALUE 1.
+        DATA lv_depth TYPE i.
+        lv_depth = 1.          " assignment, not DATA..VALUE: a declaration
+                               " initializes once per call, not per iteration
         DATA lv_j TYPE i.
         lv_j = lv_i + 1.
         DATA lv_start TYPE i.
@@ -1087,7 +1091,9 @@ CLASS zcl_mdmdoc_pdf IMPLEMENTATION.
 
       " literal string ( ... )
       IF lv_ch = `(`.
-        DATA lv_depth TYPE i VALUE 1.
+        DATA lv_depth TYPE i.
+        lv_depth = 1.          " assignment, not DATA..VALUE: a declaration
+                               " initializes once per call, not per iteration
         DATA lv_j TYPE i.
         lv_j = lv_i + 1.
         DATA lv_start TYPE i.

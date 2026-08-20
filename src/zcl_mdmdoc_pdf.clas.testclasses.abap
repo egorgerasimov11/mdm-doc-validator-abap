@@ -20,6 +20,10 @@ CLASS ltcl_pdf DEFINITION FINAL FOR TESTING
     METHODS flate_stream_text  FOR TESTING.
     METHODS flate_corrupt_warn FOR TESTING.
     METHODS latin1_roundtrip   FOR TESTING.
+    " a DATA..VALUE declaration inside the tokenizer loops initialized the paren-depth
+    " counter only once per call, so everything after the first literal was dropped
+    METHODS tj_array_three     FOR TESTING.
+    METHODS many_literals      FOR TESTING.
 ENDCLASS.
 
 CLASS ltcl_pdf IMPLEMENTATION.
@@ -57,6 +61,35 @@ CLASS ltcl_pdf IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'Good' ) ).
     cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'Morning' ) ).
     cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'Hello' ) ).
+  ENDMETHOD.
+
+  METHOD tj_array_three.
+    DATA(lv_pdf) =
+      |%PDF-1.4\n| &&
+      |1 0 obj\n<< /Length 80 >>\nstream\n| &&
+      |BT [(ACME) -300 (Industries) -300 (LLC)] TJ ET\n| &&
+      |endstream\nendobj\n%%EOF\n|.
+    zcl_mdmdoc_pdf=>extract_text(
+      EXPORTING iv_pdf = to_x( lv_pdf )
+      IMPORTING ev_text = DATA(lv_text) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'ACME' ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'Industries' ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'LLC' ) ).
+  ENDMETHOD.
+
+  METHOD many_literals.
+    " several separate Tj literals in one stream, the later ones with nested parens
+    DATA(lv_pdf) =
+      |%PDF-1.4\n| &&
+      |1 0 obj\n<< /Length 120 >>\nstream\n| &&
+      |BT (IBAN DE44) Tj 0 -12 Td (SWIFT CHASUS33) Tj 0 -12 Td (Holder (ACME) Ltd) Tj ET\n| &&
+      |endstream\nendobj\n%%EOF\n|.
+    zcl_mdmdoc_pdf=>extract_text(
+      EXPORTING iv_pdf = to_x( lv_pdf )
+      IMPORTING ev_text = DATA(lv_text) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'IBAN DE44' ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'CHASUS33' ) ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_text CS 'ACME' ) ).
   ENDMETHOD.
 
   METHOD encrypted_detected.

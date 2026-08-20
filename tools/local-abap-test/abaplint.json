@@ -1,0 +1,5 @@
+{
+  "global": { "files": "/src/**/*.*" },
+  "syntax": { "version": "v750", "errorNamespace": "^(Z|Y|LCL_|LTCL_)" },
+  "rules": { "parser_error": true, "check_syntax": true }
+}
