@@ -57,7 +57,7 @@ If you see one of these locally, do not "fix" production code for it.
 ## Why it earns its keep
 
 The very first local run found a real defect that no amount of reading had caught
-(case C-2026-08-20-02): a paren-depth counter declared as `DATA lv_depth TYPE i
+(case C-2026-08-20-03): a paren-depth counter declared as `DATA lv_depth TYPE i
 VALUE 1.` *inside* a loop. In ABAP a `DATA ... VALUE` declaration initializes once
 per call, not once per iteration, so every text fragment after the first was
 silently dropped from every content stream. A green transpiled run would have
