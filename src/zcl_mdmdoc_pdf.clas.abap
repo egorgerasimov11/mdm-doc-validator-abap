@@ -17,6 +17,25 @@ CLASS zcl_mdmdoc_pdf DEFINITION
                 ev_encrypted TYPE abap_bool
                 et_warnings  TYPE string_table.
 
+    " ---- text-layer plausibility (port of src/mdmdoc/extract/plausibility.py) --
+    " Is this text LANGUAGE, or the soup a broken text layer produces? A scanned
+    " document whose embedded OCR layer is mojibake used to pass the strlen( ) < 40
+    " test and be trusted as the document (case C-2026-08-21-02: a Korean bankbook
+    " whose 1304-character layer read `zt4fla q=€+ d€qql€ 7l'J`). The Python
+    " reference and this port must agree — parity is asserted case by case by
+    " ZCL_MDMDOC_PLAUS_GOLDEN, generated from the Python side.
+    "! Plausibility of a text layer, 0..1000 (Python plausibility( ) * 1000).
+    CLASS-METHODS plausibility
+      IMPORTING iv_text         TYPE string
+      RETURNING VALUE(rv_score) TYPE i.
+    "! Should this text layer be used at all? Folds the former strlen( ) test in.
+    CLASS-METHODS layer_usable
+      IMPORTING iv_text      TYPE string
+                iv_min_chars TYPE i DEFAULT 40
+      EXPORTING ev_usable    TYPE abap_bool
+                ev_reason    TYPE string
+                ev_score     TYPE i.
+
   PRIVATE SECTION.
     TYPES: BEGIN OF ty_cmap_entry,
              code TYPE i,
@@ -118,6 +137,71 @@ CLASS zcl_mdmdoc_pdf DEFINITION
                 it_cmaps     TYPE tt_named_cmap
       EXPORTING ev_have_cmap TYPE abap_bool
                 et_map       TYPE tt_cmap.
+
+    " ---- text-layer plausibility helpers (port of extract/plausibility.py) ---
+    " Everything below classifies characters WITHOUT unicode category tables: a
+    " character above U+007F that is not in c_symbols is a letter of some other
+    " script. Verified over the whole benchmark corpus — the discriminating power
+    " lives entirely in the ASCII range (the Korean mojibake carries exactly one
+    " non-ASCII character: the euro sign).
+    CONSTANTS c_trust_layer TYPE i VALUE 700.
+    " the two sets are split only to stay inside abaplint's 140-char line limit
+    CONSTANTS c_symbols_a TYPE string VALUE `{}[]<>|^~``=@#$%*\€£¥₩§©®™°`.
+    CONSTANTS c_symbols_b TYPE string VALUE `±×÷•·●○■□▪▫◆★☆←→↑↓☑☐✓✔✗✘`.
+    CONSTANTS c_weird     TYPE string VALUE `{}[]<>|^~``=@#$%*\€£¥₩§©®™°`.
+    CONSTANTS c_edge      TYPE string VALUE `()[]{}<>"'«»„“”‘’.,;:!?…-–—_/\|*+=~^``·•●○■□▪`.
+    CONSTANTS c_upper     TYPE string VALUE `ABCDEFGHIJKLMNOPQRSTUVWXYZ`.
+    CONSTANTS c_lower     TYPE string VALUE `abcdefghijklmnopqrstuvwxyz`.
+    CONSTANTS c_digits    TYPE string VALUE `0123456789`.
+    CONSTANTS c_vowels    TYPE string VALUE `aeiouy`.
+    " printable ASCII, split in two only to stay inside the 140-char line limit;
+    " a character outside these (and not whitespace) is a letter of another script
+    CONSTANTS c_ascii_a   TYPE string VALUE ` !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNO`.
+    CONSTANTS c_ascii_b   TYPE string VALUE `PQRSTUVWXYZ[\]^_``abcdefghijklmnopqrstuvwxyz{|}~`.
+
+    CLASS-METHODS plaus_tokens
+      IMPORTING iv_text        TYPE string
+      RETURNING VALUE(rt_toks) TYPE string_table.
+    CLASS-METHODS plaus_strip_edges
+      IMPORTING iv_tok         TYPE string
+      RETURNING VALUE(rv_core) TYPE string.
+    CLASS-METHODS plaus_other_script
+      IMPORTING iv_s          TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_wellformed
+      IMPORTING iv_tok        TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_short_junk
+      IMPORTING iv_tok        TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_word_improbable
+      IMPORTING iv_word       TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_latin_word_ok
+      IMPORTING iv_tok        TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_is_ascii_letters
+      IMPORTING iv_s          TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_num_token
+      IMPORTING iv_s          TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_mixed_ok
+      IMPORTING iv_s          TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_upper_code
+      IMPORTING iv_s          TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_mail_or_url
+      IMPORTING iv_s          TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_short_ok
+      IMPORTING iv_s          TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+    CLASS-METHODS plaus_count_any
+      IMPORTING iv_s          TYPE string
+                iv_set        TYPE string
+      RETURNING VALUE(rv_n)   TYPE i.
 
     " ---- numeric / char helpers ---------------------------------------------
     CLASS-METHODS hex_str_to_int
@@ -1201,6 +1285,594 @@ CLASS zcl_mdmdoc_pdf IMPLEMENTATION.
     IF lv_block IS NOT INITIAL.
       append_block( CHANGING cv_out = cv_out cv_block = lv_block ).
     ENDIF.
+  ENDMETHOD.
+
+
+  " ---- text-layer plausibility (port of src/mdmdoc/extract/plausibility.py) --
+  " Parity with the Python reference is asserted case by case by
+  " ZCL_MDMDOC_PLAUS_GOLDEN (generated). Arithmetic is integer per-mille: the
+  " package has no floating-point API and exact float parity across two languages
+  " is not worth chasing — the golden test allows +/- 5 per mille.
+
+  METHOD plaus_count_any.
+    DATA lv_off TYPE i.
+    DATA(lv_len) = strlen( iv_s ).
+    WHILE lv_off < lv_len.
+      DATA(lv_ch) = iv_s+lv_off(1).
+      IF lv_ch CA iv_set.
+        rv_n = rv_n + 1.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+  ENDMETHOD.
+
+  METHOD plaus_tokens.
+    " Python's str.split(): split on ANY run of whitespace. SPLIT ... AT space only
+    " cuts on the blank, so flatten CR/LF/tab first (same trick as zcl_mdmdoc_regex).
+    DATA(lv_flat) = iv_text.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN lv_flat WITH ` `.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN lv_flat WITH ` `.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>horizontal_tab IN lv_flat WITH ` `.
+    SPLIT lv_flat AT space INTO TABLE rt_toks.
+    DELETE rt_toks WHERE table_line IS INITIAL.
+  ENDMETHOD.
+
+  METHOD plaus_strip_edges.
+    " Python str.strip(_EDGE_PUNCT): drop leading and trailing edge punctuation.
+    rv_core = iv_tok.
+    WHILE strlen( rv_core ) > 0.
+      DATA(lv_first) = rv_core(1).
+      IF lv_first CA c_edge.
+        rv_core = rv_core+1.
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDWHILE.
+    WHILE strlen( rv_core ) > 0.
+      DATA(lv_last_off) = strlen( rv_core ) - 1.
+      DATA(lv_last) = rv_core+lv_last_off(1).
+      IF lv_last CA c_edge.
+        rv_core = rv_core(lv_last_off).
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDWHILE.
+  ENDMETHOD.
+
+  METHOD plaus_other_script.
+    " A character above U+007F that is not one of our symbols = a letter of some
+    " other script (CJK, Cyrillic, Arabic, accented Latin). This is what keeps the
+    " gate free of unicode category tables, which 7.50 does not have.
+    " No code points: cl_abap_conv_in_ce=>uccpi is not available in the local
+    " transpiler harness, and it is not needed — "above U+007F" is exactly "outside
+    " printable ASCII, and not whitespace".
+    DATA lv_off TYPE i.
+    DATA(lv_ws) = cl_abap_char_utilities=>newline && cl_abap_char_utilities=>cr_lf
+               && cl_abap_char_utilities=>horizontal_tab.
+    DATA(lv_len) = strlen( iv_s ).
+    WHILE lv_off < lv_len.
+      DATA(lv_ch) = iv_s+lv_off(1).
+      IF lv_ch NA c_ascii_a AND lv_ch NA c_ascii_b AND lv_ch NA lv_ws
+         AND lv_ch NA c_symbols_a AND lv_ch NA c_symbols_b.
+        rv_yes = abap_true.
+        RETURN.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+  ENDMETHOD.
+
+  METHOD plaus_is_ascii_letters.
+    " All characters are ASCII letters (apostrophe and hyphen allowed as joiners)
+    " and at least one is a letter.
+    DATA lv_off TYPE i.
+    DATA lv_has TYPE abap_bool.
+    DATA(lv_len) = strlen( iv_s ).
+    WHILE lv_off < lv_len.
+      DATA(lv_ch) = iv_s+lv_off(1).
+      IF lv_ch CA c_upper OR lv_ch CA c_lower.
+        lv_has = abap_true.
+      ELSEIF lv_ch = `'` OR lv_ch = `-`.
+        " joiner: allowed, but does not make the token a word on its own
+      ELSE.
+        RETURN.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    rv_yes = lv_has.
+  ENDMETHOD.
+
+  METHOD plaus_latin_word_ok.
+    " A letters-only Latin token: needs a vowel, unless it is a short acronym;
+    " a mid-word case flip (aB) is the signature of OCR junk.
+    DATA lv_off TYPE i.
+    DATA(lv_letters) = plaus_count_any( iv_s = iv_tok iv_set = c_upper ) +
+                       plaus_count_any( iv_s = iv_tok iv_set = c_lower ).
+    IF lv_letters < 3.
+      rv_yes = abap_true.
+      RETURN.
+    ENDIF.
+    IF plaus_word_improbable( iv_tok ) = abap_true.
+      RETURN.
+    ENDIF.
+    DATA(lv_upper_n) = plaus_count_any( iv_s = iv_tok iv_set = c_upper ).
+    IF lv_upper_n = lv_letters AND lv_letters <= 6.
+      rv_yes = abap_true.               " HSBC, BBVA, IBAN, SWIFT
+      RETURN.
+    ENDIF.
+    DATA(lv_low) = to_lower( iv_tok ).
+    IF plaus_count_any( iv_s = lv_low iv_set = c_vowels ) >= 1.
+      rv_yes = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD plaus_word_improbable.
+    " Port of ocr._word_improbable: a mid-word case flip, or an implausibly long
+    " vowel-poor token. All-caps short tokens are acronyms, never improbable.
+    DATA lv_off TYPE i.
+    DATA(lv_n) = plaus_count_any( iv_s = iv_word iv_set = c_upper ) +
+                 plaus_count_any( iv_s = iv_word iv_set = c_lower ).
+    IF lv_n < 3.
+      RETURN.
+    ENDIF.
+    DATA(lv_upper_n) = plaus_count_any( iv_s = iv_word iv_set = c_upper ).
+    IF lv_upper_n = lv_n AND lv_n <= 6.
+      RETURN.
+    ENDIF.
+    " mid-word case flip: a lowercase letter immediately followed by an uppercase one
+    DATA(lv_len) = strlen( iv_word ).
+    WHILE lv_off < lv_len - 1.
+      DATA(lv_a) = iv_word+lv_off(1).
+      DATA(lv_b) = iv_word+lv_off(1).
+      DATA(lv_next_off) = lv_off + 1.
+      lv_b = iv_word+lv_next_off(1).
+      IF lv_a CA c_lower AND lv_b CA c_upper.
+        rv_yes = abap_true.
+        RETURN.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    IF lv_n >= 13.
+      DATA(lv_low) = to_lower( iv_word ).
+      DATA(lv_v) = plaus_count_any( iv_s = lv_low iv_set = c_vowels ).
+      " vowel ratio below 0.42 -> compare 100*v < 42*n to stay in integers
+      IF 100 * lv_v < 42 * lv_n.
+        rv_yes = abap_true.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD plaus_num_token.
+    " Python _NUM_TOKEN, two alternatives, expressed as character walks so that no
+    " regex dialect difference can creep in between the two implementations:
+    "   a) [+-]? digit ( [digit.,-/:'] * digit )? %?
+    "   b) \(? digit{2,4} \)? [digit-.]{3,}
+    DATA lv_off TYPE i.
+    DATA(lv_len) = strlen( iv_s ).
+    IF lv_len = 0.
+      RETURN.
+    ENDIF.
+    " --- alternative (a)
+    DATA(lv_i) = 0.
+    DATA(lv_ok) = abap_true.
+    DATA(lv_ch) = iv_s(1).
+    IF lv_ch = `+` OR lv_ch = `-`.
+      lv_i = 1.
+    ENDIF.
+    IF lv_i >= lv_len.
+      lv_ok = abap_false.
+    ELSE.
+      lv_ch = iv_s+lv_i(1).
+      IF lv_ch NA c_digits.
+        lv_ok = abap_false.
+      ENDIF.
+    ENDIF.
+    IF lv_ok = abap_true.
+      DATA(lv_end) = lv_len - 1.
+      DATA(lv_tail) = iv_s+lv_end(1).
+      IF lv_tail = `%`.
+        lv_end = lv_end - 1.
+        IF lv_end < lv_i.
+          lv_ok = abap_false.
+        ELSE.
+          lv_tail = iv_s+lv_end(1).
+        ENDIF.
+      ENDIF.
+      IF lv_ok = abap_true AND lv_tail NA c_digits.
+        lv_ok = abap_false.
+      ENDIF.
+    ENDIF.
+    IF lv_ok = abap_true.
+      lv_off = lv_i.
+      WHILE lv_off <= lv_end.
+        lv_ch = iv_s+lv_off(1).
+        IF lv_ch NA c_digits AND lv_ch <> `.` AND lv_ch <> `,` AND lv_ch <> `-`
+           AND lv_ch <> `/` AND lv_ch <> `:` AND lv_ch <> `'` AND lv_ch <> `′` AND lv_ch <> `″`.
+          lv_ok = abap_false.
+          EXIT.
+        ENDIF.
+        lv_off = lv_off + 1.
+      ENDWHILE.
+    ENDIF.
+    IF lv_ok = abap_true.
+      rv_yes = abap_true.
+      RETURN.
+    ENDIF.
+    " --- alternative (b)
+    lv_i = 0.
+    IF iv_s(1) = `(`.
+      lv_i = 1.
+    ENDIF.
+    DATA(lv_digits) = 0.
+    WHILE lv_i + lv_digits < lv_len.
+      DATA(lv_at) = lv_i + lv_digits.
+      lv_ch = iv_s+lv_at(1).
+      IF lv_ch CA c_digits.
+        lv_digits = lv_digits + 1.
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDWHILE.
+    IF lv_digits < 2 OR lv_digits > 4.
+      RETURN.
+    ENDIF.
+    lv_off = lv_i + lv_digits.
+    IF lv_off < lv_len.
+      lv_ch = iv_s+lv_off(1).
+      IF lv_ch = `)`.
+        lv_off = lv_off + 1.
+      ENDIF.
+    ENDIF.
+    DATA(lv_rest) = lv_len - lv_off.
+    IF lv_rest < 3.
+      RETURN.
+    ENDIF.
+    WHILE lv_off < lv_len.
+      lv_ch = iv_s+lv_off(1).
+      IF lv_ch NA c_digits AND lv_ch <> `-` AND lv_ch <> `.`.
+        RETURN.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    rv_yes = abap_true.
+  ENDMETHOD.
+
+  METHOD plaus_mixed_ok.
+    " Python _MIXED_OK: W9, 3a, C24, A4, 1st, 12th — a short letter/digit mix.
+    DATA lv_off TYPE i.
+    DATA(lv_len) = strlen( iv_s ).
+    IF lv_len = 0.
+      RETURN.
+    ENDIF.
+    " shape 1: 1-3 letters, 1-6 digits, optional trailing letter
+    DATA(lv_i) = 0.
+    DATA(lv_a) = 0.
+    WHILE lv_i < lv_len.
+      DATA(lv_ch) = iv_s+lv_i(1).
+      IF ( lv_ch CA c_upper OR lv_ch CA c_lower ) AND lv_a < 3.
+        lv_a = lv_a + 1.
+        lv_i = lv_i + 1.
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDWHILE.
+    IF lv_a >= 1.
+      DATA(lv_d) = 0.
+      WHILE lv_i < lv_len.
+        lv_ch = iv_s+lv_i(1).
+        IF lv_ch CA c_digits AND lv_d < 6.
+          lv_d = lv_d + 1.
+          lv_i = lv_i + 1.
+        ELSE.
+          EXIT.
+        ENDIF.
+      ENDWHILE.
+      IF lv_d >= 1.
+        IF lv_i = lv_len.
+          rv_yes = abap_true.
+          RETURN.
+        ENDIF.
+        IF lv_i = lv_len - 1.
+          lv_ch = iv_s+lv_i(1).
+          IF lv_ch CA c_upper OR lv_ch CA c_lower.
+            rv_yes = abap_true.
+            RETURN.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    " shape 2: 1-6 digits followed by st/nd/rd/th/er/re, a masculine/feminine
+    " ordinal sign, or one letter
+    lv_i = 0.
+    lv_d = 0.
+    WHILE lv_i < lv_len.
+      lv_ch = iv_s+lv_i(1).
+      IF lv_ch CA c_digits AND lv_d < 6.
+        lv_d = lv_d + 1.
+        lv_i = lv_i + 1.
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDWHILE.
+    IF lv_d < 1 OR lv_i = lv_len.
+      RETURN.
+    ENDIF.
+    DATA(lv_suffix) = iv_s+lv_i.
+    IF lv_suffix = `st` OR lv_suffix = `nd` OR lv_suffix = `rd` OR lv_suffix = `th`
+       OR lv_suffix = `er` OR lv_suffix = `re` OR lv_suffix = `ª` OR lv_suffix = `º`.
+      rv_yes = abap_true.
+      RETURN.
+    ENDIF.
+    IF strlen( lv_suffix ) = 1 AND ( lv_suffix CA c_upper OR lv_suffix CA c_lower ).
+      rv_yes = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD plaus_upper_code.
+    " Python _UPPER_CODE plus the >=2 digits condition: IBAN chunks, SWIFT codes,
+    " invoice ids — uppercase and digits with . / - separators.
+    DATA lv_off TYPE i.
+    DATA(lv_len) = strlen( iv_s ).
+    IF lv_len < 3.
+      RETURN.
+    ENDIF.
+    DATA(lv_first) = iv_s(1).
+    IF lv_first NA c_upper AND lv_first NA c_digits.
+      RETURN.
+    ENDIF.
+    lv_off = 1.
+    WHILE lv_off < lv_len.
+      DATA(lv_ch) = iv_s+lv_off(1).
+      IF lv_ch NA c_upper AND lv_ch NA c_digits AND lv_ch <> `.` AND lv_ch <> `/` AND lv_ch <> `-`.
+        RETURN.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    IF plaus_count_any( iv_s = iv_s iv_set = c_digits ) >= 2.
+      rv_yes = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD plaus_mail_or_url.
+    DATA lv_off TYPE i.
+    DATA(lv_len) = strlen( iv_s ).
+    IF lv_len = 0.
+      RETURN.
+    ENDIF.
+    IF iv_s CS `@`.
+      " exactly one @, non-empty both sides, only word characters and . + -
+      DATA(lv_at_n) = plaus_count_any( iv_s = iv_s iv_set = `@` ).
+      IF lv_at_n <> 1.
+        RETURN.
+      ENDIF.
+      FIND FIRST OCCURRENCE OF `@` IN iv_s MATCH OFFSET DATA(lv_at).
+      IF lv_at = 0 OR lv_at = lv_len - 1.
+        RETURN.
+      ENDIF.
+      WHILE lv_off < lv_len.
+        DATA(lv_ch) = iv_s+lv_off(1).
+        IF lv_ch NA c_upper AND lv_ch NA c_lower AND lv_ch NA c_digits
+           AND lv_ch <> `@` AND lv_ch <> `.` AND lv_ch <> `_` AND lv_ch <> `+` AND lv_ch <> `-`.
+          RETURN.
+        ENDIF.
+        lv_off = lv_off + 1.
+      ENDWHILE.
+      rv_yes = abap_true.
+      RETURN.
+    ENDIF.
+    DATA(lv_low) = to_lower( iv_s ).
+    IF lv_low CP `http://*` OR lv_low CP `https://*` OR lv_low CP `www.*`.
+      rv_yes = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD plaus_wellformed.
+    DATA(lv_core) = plaus_strip_edges( iv_tok ).
+    IF lv_core IS INITIAL.
+      rv_yes = abap_true.               " pure punctuation (bullets, dashes, brackets)
+      RETURN.
+    ENDIF.
+    IF plaus_other_script( lv_core ) = abap_true.
+      rv_yes = abap_true.               " 第3条, 〒123, ул.5 — letters of another script
+      RETURN.
+    ENDIF.
+    DATA(lv_weird) = plaus_count_any( iv_s = lv_core iv_set = c_weird ).
+    IF lv_weird > 0.
+      " a symbol is fine as the whole token (currency signs, ©) — never mid-word
+      IF strlen( lv_core ) = 1.
+        rv_yes = abap_true.
+      ENDIF.
+      RETURN.
+    ENDIF.
+    IF plaus_is_ascii_letters( lv_core ) = abap_true.
+      rv_yes = plaus_latin_word_ok( lv_core ).
+      RETURN.
+    ENDIF.
+    IF plaus_num_token( lv_core ) = abap_true
+       OR plaus_mixed_ok( lv_core ) = abap_true
+       OR plaus_mail_or_url( lv_core ) = abap_true
+       OR plaus_upper_code( lv_core ) = abap_true.
+      rv_yes = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD plaus_short_ok.
+    " Two-letter words that are real in the languages this corpus contains.
+    " Kept as one literal per line to stay inside the 140-char limit.
+    CONSTANTS lc_lat1 TYPE string VALUE `a ab ag al am an as at au be bv by cc ce cf ch cm cn co da de di do`.
+    CONSTANTS lc_lat1b TYPE string VALUE `du el en er es et eu`.
+    CONSTANTS lc_lat2 TYPE string VALUE `fw gm go he hr i id if il im in is it ja je jp kg kr la le lo lt me ml mm my ne no nr`.
+    CONSTANTS lc_lat3 TYPE string VALUE `nv o of ok on or ou ph pm pp re rm rs ru sa se so su te to tr tu tv tx tz uk um un up`.
+    CONSTANTS lc_lat4 TYPE string VALUE `us vs we wo y zu`.
+    CONSTANTS lc_cyr1 TYPE string VALUE `в во да до же за и из к ко ли мы на не ни но о об он от по с со то ты у я`.
+    DATA(lv_probe) = | { iv_s } |.
+        " pad both sides so that `a` cannot match inside `ab`
+    IF | { lc_lat1 } | CS lv_probe OR | { lc_lat1b } | CS lv_probe OR | { lc_lat2 } | CS lv_probe
+       OR | { lc_lat3 } | CS lv_probe OR | { lc_lat4 } | CS lv_probe OR | { lc_cyr1 } | CS lv_probe.
+      rv_yes = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD plaus_short_junk.
+    " A 1-2 character token that is neither a word, a number, punctuation nor another
+    " script. Mojibake is full of them: zt, q=, ;H, LI, 'J.
+    DATA(lv_core) = plaus_strip_edges( iv_tok ).
+    DATA(lv_len) = strlen( lv_core ).
+    IF lv_len = 0 OR lv_len > 2.
+      RETURN.
+    ENDIF.
+    IF plaus_count_any( iv_s = lv_core iv_set = c_digits ) = lv_len.
+      RETURN.                            " pure digits
+    ENDIF.
+    IF plaus_other_script( lv_core ) = abap_true.
+      RETURN.
+    ENDIF.
+    IF lv_len = 1.
+      IF lv_core NA c_upper AND lv_core NA c_lower.
+        rv_yes = abap_true.              " a single LETTER is fine (initials, list markers)
+      ENDIF.
+      RETURN.
+    ENDIF.
+    DATA(lv_low) = to_lower( lv_core ).
+    IF plaus_short_ok( lv_low ) = abap_true.
+      RETURN.
+    ENDIF.
+    IF plaus_count_any( iv_s = lv_core iv_set = c_upper ) = lv_len.
+      RETURN.                            " two-letter caps = acronym / state code
+    ENDIF.
+    rv_yes = abap_true.
+  ENDMETHOD.
+
+  METHOD plausibility.
+    DATA lv_off TYPE i.
+    DATA(lt_toks) = plaus_tokens( iv_text ).
+    DATA(lv_n) = lines( lt_toks ).
+    IF lv_n = 0.
+      RETURN.
+    ENDIF.
+
+    " --- well-formed share and short-junk share, per mille
+    DATA lv_wf_c TYPE i.
+    DATA lv_sj_c TYPE i.
+    LOOP AT lt_toks INTO DATA(lv_tok).
+      IF plaus_wellformed( lv_tok ) = abap_true.
+        lv_wf_c = lv_wf_c + 1.
+      ENDIF.
+      IF plaus_short_junk( lv_tok ) = abap_true.
+        lv_sj_c = lv_sj_c + 1.
+      ENDIF.
+    ENDLOOP.
+    DATA(lv_wf_m) = 1000 * lv_wf_c / lv_n.
+    DATA(lv_sj_m) = 1000 * lv_sj_c / lv_n.
+
+    " --- improbable share over Latin words of 3+ letters
+    DATA lt_words TYPE string_table.
+    DATA lv_cur TYPE string.
+    DATA(lv_len) = strlen( iv_text ).
+    lv_off = 0.
+    WHILE lv_off < lv_len.
+      DATA(lv_ch) = iv_text+lv_off(1).
+      IF lv_ch CA c_upper OR lv_ch CA c_lower.
+        lv_cur = lv_cur && lv_ch.
+      ELSE.
+        IF strlen( lv_cur ) >= 3.
+          APPEND lv_cur TO lt_words.
+        ENDIF.
+        CLEAR lv_cur.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    IF strlen( lv_cur ) >= 3.
+      APPEND lv_cur TO lt_words.
+    ENDIF.
+    DATA lv_imp_m TYPE i.
+    DATA(lv_words) = lines( lt_words ).
+    IF lv_words > 0.
+      DATA lv_imp_c TYPE i.
+      LOOP AT lt_words INTO DATA(lv_word).
+        IF plaus_word_improbable( lv_word ) = abap_true.
+          lv_imp_c = lv_imp_c + 1.
+        ENDIF.
+      ENDLOOP.
+      lv_imp_m = 1000 * lv_imp_c / lv_words.
+    ENDIF.
+
+    " --- symbol density over non-space characters, and the Latin vowel ratio
+    DATA lv_nonspace TYPE i.
+    DATA lv_sym TYPE i.
+    DATA lv_lat TYPE i.
+    DATA lv_vow TYPE i.
+    lv_off = 0.
+    WHILE lv_off < lv_len.
+      lv_ch = iv_text+lv_off(1).
+      IF lv_ch <> ` ` AND lv_ch <> cl_abap_char_utilities=>newline
+         AND lv_ch <> cl_abap_char_utilities=>horizontal_tab.
+        lv_nonspace = lv_nonspace + 1.
+        IF lv_ch CA c_symbols_a OR lv_ch CA c_symbols_b.
+          lv_sym = lv_sym + 1.
+        ENDIF.
+      ENDIF.
+      IF lv_ch CA c_upper OR lv_ch CA c_lower.
+        lv_lat = lv_lat + 1.
+        DATA(lv_low_ch) = to_lower( lv_ch ).
+        IF lv_low_ch CA c_vowels.
+          lv_vow = lv_vow + 1.
+        ENDIF.
+      ENDIF.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    IF lv_nonspace = 0.
+      lv_nonspace = 1.
+    ENDIF.
+    DATA(lv_sym_m) = 10000 * lv_sym / lv_nonspace.     " density * 10, per mille
+    IF lv_sym_m > 1000.
+      lv_sym_m = 1000.
+    ENDIF.
+    DATA(lv_vok_m) = 1000.
+    IF lv_lat >= 20.
+      DATA(lv_vr_m) = 1000 * lv_vow / lv_lat.
+      IF lv_vr_m < 280 OR lv_vr_m > 620.
+        DATA(lv_delta) = lv_vr_m - 450.
+        IF lv_delta < 0.
+          lv_delta = -1 * lv_delta.
+        ENDIF.
+        lv_vok_m = 1000 - 4 * lv_delta.
+        IF lv_vok_m < 0.
+          lv_vok_m = 0.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    DATA(lv_sj_term) = 4 * lv_sj_m.
+    IF lv_sj_term > 1000.
+      lv_sj_term = 1000.
+    ENDIF.
+
+    " --- the same five weights as the Python reference
+    rv_score = ( 400 * lv_wf_m
+               + 200 * ( 1000 - lv_imp_m )
+               + 150 * ( 1000 - lv_sym_m )
+               + 100 * lv_vok_m
+               + 150 * ( 1000 - lv_sj_term ) ) / 1000.
+    IF rv_score > 1000.
+      rv_score = 1000.
+    ELSEIF rv_score < 0.
+      rv_score = 0.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD layer_usable.
+    CLEAR: ev_usable, ev_reason, ev_score.
+    DATA(lv_trimmed) = condense( val = iv_text ).
+    ev_score = plausibility( iv_text ).
+    IF strlen( lv_trimmed ) < iv_min_chars.
+      ev_reason = |text layer has { strlen( lv_trimmed ) } chars|.
+      RETURN.
+    ENDIF.
+    IF ev_score < c_trust_layer.
+      ev_reason = |text layer implausible: score { ev_score } of 1000|.
+      RETURN.
+    ENDIF.
+    ev_usable = abap_true.
+    ev_reason = |text layer plausible: score { ev_score } of 1000|.
   ENDMETHOD.
 
 ENDCLASS.

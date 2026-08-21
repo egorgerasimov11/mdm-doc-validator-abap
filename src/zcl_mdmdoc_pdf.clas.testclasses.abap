@@ -24,6 +24,13 @@ CLASS ltcl_pdf DEFINITION FINAL FOR TESTING
     " counter only once per call, so everything after the first literal was dropped
     METHODS tj_array_three     FOR TESTING.
     METHODS many_literals      FOR TESTING.
+    " ---- text-layer plausibility gate (port of extract/plausibility.py) ----
+    METHODS plaus_golden_parity   FOR TESTING.
+    METHODS plaus_mojibake_reject FOR TESTING.
+    METHODS plaus_real_accepted   FOR TESTING.
+    METHODS plaus_cjk_accepted    FOR TESTING.
+    METHODS plaus_short_empty     FOR TESTING.
+    METHODS plaus_end_to_end      FOR TESTING.
 ENDCLASS.
 
 CLASS ltcl_pdf IMPLEMENTATION.
@@ -189,6 +196,102 @@ CLASS ltcl_pdf IMPLEMENTATION.
     DATA(lv_out) = zcl_mdmdoc_pdf=>latin1_to_bytes( lv_str ).
     cl_abap_unit_assert=>assert_equals( act = lv_out exp = lv_in
       msg = 'codepage 1100 round trip is not byte-transparent on this system' ).
+  ENDMETHOD.
+
+
+  METHOD plaus_golden_parity.
+    " Every case of the generated corpus must score within +/-5 per mille of the
+    " Python reference and reach the same usable verdict. This is the whole point of
+    " the port: an APPROXIMATE gate scored the Korean mojibake 0.75 and would have
+    " passed it (case C-2026-08-21-02).
+    LOOP AT zcl_mdmdoc_plaus_golden=>gt_cases INTO DATA(ls_c).
+      DATA(lv_score) = zcl_mdmdoc_pdf=>plausibility( ls_c-text ).
+      DATA(lv_delta) = lv_score - ls_c-score.
+      IF lv_delta < 0.
+        lv_delta = -1 * lv_delta.
+      ENDIF.
+      cl_abap_unit_assert=>assert_true(
+        act = boolc( lv_delta <= 5 )
+        msg = |{ ls_c-id }: score { lv_score } but Python says { ls_c-score }| ).
+      zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text = ls_c-text
+                                    IMPORTING ev_usable = DATA(lv_usable) ).
+      cl_abap_unit_assert=>assert_equals(
+        act = lv_usable exp = ls_c-usable
+        msg = |{ ls_c-id }: usable verdict differs from the Python reference| ).
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD plaus_mojibake_reject.
+    " The document that started this: a Korean bankbook scan whose embedded OCR layer
+    " is latin/symbol soup. 1304 characters — it sails past strlen( ) < 40.
+    DATA(lv_soup) = `   zt4fla  5()2-()655*    1994-A   1         d€qql€` &&
+      cl_abap_char_utilities=>newline &&
+      `  q=€+    ;&l @..-{l   *` && cl_abap_char_utilities=>newline &&
+      `           <<t 1.4€.ei>>` && cl_abap_char_utilities=>newline &&
+      `    7l'J 6t{] 'J  201.5H 0t e 22 "J     rll€tEJ+drHlEEtNo.1Account` &&
+      cl_abap_char_utilities=>newline &&
+      `      E I       ; H       ; I    L I        = 6 t  l =      2015 Ll 01 C 22";`.
+    zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text = lv_soup
+                                  IMPORTING ev_usable = DATA(lv_usable)
+                                            ev_score  = DATA(lv_score)
+                                            ev_reason = DATA(lv_reason) ).
+    cl_abap_unit_assert=>assert_false( act = lv_usable msg = |scored { lv_score }: { lv_reason }| ).
+    cl_abap_unit_assert=>assert_true( act = boolc( lv_score < 700 ) ).
+  ENDMETHOD.
+
+  METHOD plaus_real_accepted.
+    DATA(lv_letter) = `Bank of America, N.A.` && cl_abap_char_utilities=>newline &&
+      `This letter confirms that Acme Industrial Supplies LLC maintains checking` &&
+      cl_abap_char_utilities=>newline &&
+      `account number 4830 2291 0077 with Bank of America.` &&
+      cl_abap_char_utilities=>newline &&
+      `ABA routing (wires): 026009593   SWIFT: BOFAUS3N` && cl_abap_char_utilities=>newline &&
+      `Sincerely, Jane Doe, Relationship Manager`.
+    zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text = lv_letter
+                                  IMPORTING ev_usable = DATA(lv_usable)
+                                            ev_score  = DATA(lv_score) ).
+    cl_abap_unit_assert=>assert_true( act = lv_usable msg = |clean English letter scored { lv_score }| ).
+    cl_abap_unit_assert=>assert_true( act = boolc( lv_score >= 850 ) ).
+  ENDMETHOD.
+
+  METHOD plaus_cjk_accepted.
+    " Script-agnosticism: a page that is entirely Hangul/Han must pass. Without this
+    " the gate would reject every Asian document instead of every broken one.
+    DATA(lv_ko) = `계좌번호 302-0653-1998-81` && cl_abap_char_utilities=>newline &&
+      `예금종류 저축예금` && cl_abap_char_utilities=>newline &&
+      `남상욱 님` && cl_abap_char_utilities=>newline &&
+      `가입하신날 2013 년 01 월 22 일` && cl_abap_char_utilities=>newline &&
+      `NH농협은행  SWIFT CODE : NACFKRSE`.
+    zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text = lv_ko
+                                  IMPORTING ev_usable = DATA(lv_usable)
+                                            ev_score  = DATA(lv_score) ).
+    cl_abap_unit_assert=>assert_true( act = lv_usable msg = |Hangul page scored { lv_score }| ).
+  ENDMETHOD.
+
+  METHOD plaus_short_empty.
+    zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text = `02/01/2026`
+                                  IMPORTING ev_usable = DATA(lv_u1) ev_reason = DATA(lv_r1) ).
+    cl_abap_unit_assert=>assert_false( lv_u1 ).
+    cl_abap_unit_assert=>assert_true( boolc( lv_r1 CS `chars` ) ).
+    zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text = ``
+                                  IMPORTING ev_usable = DATA(lv_u2) ev_score = DATA(lv_s2) ).
+    cl_abap_unit_assert=>assert_false( lv_u2 ).
+    cl_abap_unit_assert=>assert_equals( act = lv_s2 exp = 0 ).
+  ENDMETHOD.
+
+  METHOD plaus_end_to_end.
+    " The gate reads what extract_text produced, not a hand-made string.
+    DATA(lv_pdf) =
+      |%PDF-1.4\\n| &&
+      |1 0 obj\\n<< /Type /Page >>\\nendobj\\n| &&
+      |2 0 obj\\n<< /Length 120 >>\\nstream\\n| &&
+      |BT /F1 12 Tf 72 700 Td (Bank of America confirms account 4830 2291 0077 for Acme Supplies LLC) Tj ET\\n| &&
+      |endstream\\nendobj\\n%%EOF\\n|.
+    zcl_mdmdoc_pdf=>extract_text( EXPORTING iv_pdf = to_x( lv_pdf )
+                                  IMPORTING ev_text = DATA(lv_text) ).
+    zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text = lv_text
+                                  IMPORTING ev_usable = DATA(lv_usable) ev_score = DATA(lv_score) ).
+    cl_abap_unit_assert=>assert_true( act = lv_usable msg = |extracted layer scored { lv_score }: { lv_text }| ).
   ENDMETHOD.
 
 ENDCLASS.

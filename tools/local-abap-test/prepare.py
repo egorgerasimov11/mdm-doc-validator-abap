@@ -10,7 +10,7 @@ import re
 import shutil
 
 # classes to transpile; add more as they become dependency-free enough to run
-CLASSES = ['zcl_mdmdoc_inflate', 'zcl_mdmdoc_pdf']
+CLASSES = ['zcl_mdmdoc_inflate', 'zcl_mdmdoc_pdf', 'zcl_mdmdoc_plaus_golden']
 SUFFIXES = ['.clas.abap', '.clas.testclasses.abap', '.clas.xml']
 
 HERE = pathlib.Path(__file__).parent

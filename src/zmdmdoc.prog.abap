@@ -211,11 +211,26 @@ FORM acquire_text USING is_doc TYPE zcl_mdmdoc_file=>ty_doc
                         verdict_effect = zif_mdmdoc_types=>c_verdict-review
                         message = 'PDF is encrypted/password-protected — cannot read the text layer.' )
                TO ct_pipe.
-      ELSEIF strlen( cv_text ) < 40.
-        APPEND VALUE #( rule_id = 'EXT-001' severity = zif_mdmdoc_types=>c_severity-warning
-                        verdict_effect = zif_mdmdoc_types=>c_verdict-review
-                        message = 'No readable text layer (scanned PDF?) — run OCR externally or convert a page to PNG for the LLM.' )
-               TO ct_pipe.
+      ELSE.
+        " A text layer can be present and still be worthless: a scan whose embedded
+        " OCR layer is mojibake used to pass the length test and be mined for bank
+        " details (case C-2026-08-21-02 — a Korean bankbook whose 1304-character
+        " layer read `zt4fla q=€+ d€qql€`). layer_usable folds the old length test
+        " in and adds the plausibility gate; the score travels in the message so an
+        " unexpected rejection is diagnosable from the report alone.
+        zcl_mdmdoc_pdf=>layer_usable( EXPORTING iv_text   = cv_text
+                                      IMPORTING ev_usable = DATA(lv_layer_ok)
+                                                ev_reason = DATA(lv_layer_why) ).
+        IF lv_layer_ok = abap_false.
+          " Load-bearing: without this the sniffer and the regex extractor keep
+          " reading the soup and report fields that are not on the page.
+          CLEAR cv_text.
+          APPEND VALUE #( rule_id = 'EXT-001' severity = zif_mdmdoc_types=>c_severity-warning
+                          verdict_effect = zif_mdmdoc_types=>c_verdict-review
+                          message = |No readable text layer ({ lv_layer_why }) — run OCR externally | &&
+                                    |or convert a page to PNG for the LLM.| )
+                 TO ct_pipe.
+        ENDIF.
       ENDIF.
       LOOP AT lt_warn INTO DATA(lv_w).
         APPEND VALUE #( rule_id = 'EXT-004' severity = zif_mdmdoc_types=>c_severity-note message = |PDF: { lv_w }| ) TO ct_pipe.
