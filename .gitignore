@@ -2,3 +2,11 @@ deps/
 node_modules/
 __pycache__/
 .DS_Store
+
+# Real customer documents used for local validation — MUST NEVER be committed.
+# 22 MB of vendor bank letters / W-9s / tax certificates live here untracked;
+# without this line a single `git add .` publishes them to GitHub.
+validation/
+
+# Syncthing leftovers
+*.sync-conflict-*
