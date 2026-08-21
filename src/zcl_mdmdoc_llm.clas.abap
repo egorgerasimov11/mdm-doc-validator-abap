@@ -824,12 +824,12 @@ CLASS zcl_mdmdoc_llm IMPLEMENTATION.
 
   METHOD system_vision.
     " Plain-text transcription system prompt for the vision tier (no JSON).
-    DATA lv_nl TYPE string.
-    lv_nl = cl_abap_char_utilities=>newline.
-    rv_text =
-      `You are an OCR transcriber. Transcribe the document in the image EXACTLY as printed,` && lv_nl &&
-      `preserving line order, labels, numbers, separators and leading zeros. Do not summarize,` && lv_nl &&
-      `interpret, classify or add commentary. Output the plain-text transcription only.`.
+    " ONE text, shared with the Python extractor: ZCL_MDMDOC_PROMPTS is generated
+    " from prompts/vision/transcribe_md.v1.txt by tools/gen_prompts_abap.py. The
+    " three sentences that used to live here lacked the rules the benchmark showed
+    " to matter — above all "never translate or romanize", without which a CJK page
+    " comes back in latin letters and every value on it is lost.
+    rv_text = zcl_mdmdoc_prompts=>vision_transcribe( ).
   ENDMETHOD.
 
 ENDCLASS.
