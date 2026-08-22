@@ -350,6 +350,22 @@ CLASS ltcl_llm IMPLEMENTATION.
     cl_abap_unit_assert=>assert_char_cp(
       act = mo->mt_seen_body[ 1 ] exp = `*"images"*`
       msg = `vision request carries a base64 image` ).
+    " the options must match the Python extractor — each one was earned the hard way:
+    " 1536 predict tokens silently cut a dense form page in half; no repeat_penalty
+    " let the model loop one table cell to the token limit (279 s, zero values).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = mo->mt_seen_body[ 1 ] exp = `*"repeat_penalty":1.15*`
+      msg = `repeat_penalty is sent as a bare number` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = mo->mt_seen_body[ 1 ] exp = `*"num_predict":4096*`
+      msg = `a dense page needs 4096 tokens of output` ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = mo->mt_seen_body[ 1 ] exp = `*"temperature":0,*`
+      msg = `transcription is deterministic` ).
+    " the shared prompt must be the one the Python extractor uses, not a local copy
+    cl_abap_unit_assert=>assert_char_cp(
+      act = mo->mt_seen_body[ 1 ] exp = `*Never translate, romanize*`
+      msg = `system prompt comes from ZCL_MDMDOC_PROMPTS` ).
   ENDMETHOD.
 
   METHOD transcribe_http_failure.

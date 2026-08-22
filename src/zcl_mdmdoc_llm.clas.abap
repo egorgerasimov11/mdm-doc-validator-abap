@@ -60,9 +60,10 @@ CLASS zcl_mdmdoc_llm DEFINITION
            tt_msg TYPE STANDARD TABLE OF ty_msg WITH EMPTY KEY.
 
     TYPES: BEGIN OF ty_options,
-             temperature TYPE string,   " serialized as a bare number below
-             num_ctx     TYPE i,
-             num_predict TYPE i,
+             temperature    TYPE string,   " serialized as a bare number below
+             num_ctx        TYPE i,
+             num_predict    TYPE i,
+             repeat_penalty TYPE string,   " bare number too; empty = key dropped
            END OF ty_options.
 
     TYPES: BEGIN OF ty_chat_req,
@@ -271,6 +272,7 @@ CLASS zcl_mdmdoc_llm IMPLEMENTATION.
                                          pretty_name = /ui2/cl_json=>pretty_mode-low_case ).
       " temperature must be a bare JSON number, not a quoted string.
       REPLACE ALL OCCURRENCES OF `"temperature":"0.1"` IN lv_body WITH `"temperature":0.1`.
+    REPLACE ALL OCCURRENCES OF `,"repeat_penalty":""` IN lv_body WITH ``.
       " drop the empty images array carried by every ty_msg row (text tier has none).
       REPLACE ALL OCCURRENCES OF `,"images":[]` IN lv_body WITH ``.
 
@@ -341,9 +343,17 @@ CLASS zcl_mdmdoc_llm IMPLEMENTATION.
     ls_req-model               = mv_model_vision.
     ls_req-stream              = abap_false.
     ls_req-think               = abap_false.
-    ls_req-options-temperature = `0.1`.
-    ls_req-options-num_ctx     = 8192.
-    ls_req-options-num_predict = 1536.
+    " Same options as the Python extractor (extract/engines.py, OllamaVLMEngine):
+    " - temperature 0: transcription must be deterministic
+    " - num_predict 4096: a dense form page (W-8BEN-E) is ~6400 characters; 1536
+    "   tokens cut it off silently and the missing half never surfaced as an error
+    " - repeat_penalty 1.15: without it qwen2.5vl:7b looped on a French RIB — one
+    "   table cell repeated to the token limit, 279 s, zero values — with it the same
+    "   page took 90 s and every value was there. Not tuning; load-bearing.
+    ls_req-options-temperature    = `0`.
+    ls_req-options-num_ctx        = 16384.
+    ls_req-options-num_predict    = 4096.
+    ls_req-options-repeat_penalty = `1.15`.
     " NB: format stays empty -> the 'format' key is dropped by /ui2/cl_json.
 
     APPEND VALUE #( role = `system` content = system_vision( ) ) TO ls_req-messages.
@@ -356,7 +366,8 @@ CLASS zcl_mdmdoc_llm IMPLEMENTATION.
     lv_body = /ui2/cl_json=>serialize( data        = ls_req
                                        compress     = abap_false
                                        pretty_name = /ui2/cl_json=>pretty_mode-low_case ).
-    REPLACE ALL OCCURRENCES OF `"temperature":"0.1"` IN lv_body WITH `"temperature":0.1`.
+    REPLACE ALL OCCURRENCES OF `"temperature":"0"` IN lv_body WITH `"temperature":0`.
+    REPLACE ALL OCCURRENCES OF `"repeat_penalty":"1.15"` IN lv_body WITH `"repeat_penalty":1.15`.
     " no format:json on the vision tier -> drop the empty format key; strip the
     " empty images[] the system message carries (the user message keeps its base64).
     REPLACE ALL OCCURRENCES OF `,"format":""` IN lv_body WITH ``.
